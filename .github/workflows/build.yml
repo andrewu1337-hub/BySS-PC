@@ -1,0 +1,83 @@
+name: Собрать BySS для ПК
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.c.outputs.sha }}
+      app: ${{ steps.c.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Применить исходники (если пришли)
+        id: c
+        run: |
+          changed=0
+          if [ -f bundle.b64 ]; then base64 -d bundle.b64 | tar -xJ; rm -f bundle.b64; changed=1; fi
+          if [ -f update.b64 ]; then
+            base64 -d update.b64 | xz -dc > /tmp/u.patch
+            git apply --whitespace=nowarn /tmp/u.patch
+            rm -f update.b64
+            changed=1
+          fi
+          if [ "$changed" = 1 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "Обновление исходников" || true
+            git push
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ -f package.json ]; then echo "app=true" >> "$GITHUB_OUTPUT"; else echo "app=false" >> "$GITHUB_OUTPUT"; fi
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.app == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Шрифт для надписи (свободный, OFL)
+        shell: bash
+        run: |
+          mkdir -p pages/shared/fonts
+          curl -fsSL --retry 3 -o pages/shared/fonts/archivo_black.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/archivoblack/ArchivoBlack-Regular.ttf" || echo "шрифт не скачался — будет запасной"
+      - name: Номер версии
+        shell: bash
+        run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version --allow-same-version
+      - name: Зависимости
+        shell: bash
+        run: npm install --no-audit --no-fund 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
+      - name: Сборка и публикация
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --x64 --publish always 2>&1 | tee -a build.log; exit ${PIPESTATUS[0]}
+      - name: Журнал ошибок (если сборка упала)
+        if: failure()
+        shell: bash
+        run: |
+          cp build.log "$RUNNER_TEMP/build-log.txt" 2>/dev/null || echo "нет журнала" > "$RUNNER_TEMP/build-log.txt"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan logs
+          git rm -rf --cached . > /dev/null 2>&1 || true
+          git clean -fdx -e node_modules > /dev/null 2>&1 || true
+          cp "$RUNNER_TEMP/build-log.txt" build-log.txt
+          git add build-log.txt
+          git commit -m "Журнал сборки"
+          git push -f origin logs
