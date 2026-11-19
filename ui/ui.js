@@ -38,11 +38,24 @@ $('reload').onclick = () => api.send('nav:reload');
 $('menu').onclick = () => api.send('ui:menu');
 $('shield').onclick = () => api.send('ui:shield');
 $('tr').onclick = () => api.send('ui:translate');
+$('eng').onclick = (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  api.send('ui:engine', Math.round(r.left), Math.round(r.bottom + 4));
+};
+const ENGINES = {
+  google: { name: 'Google', where: 'Google', glyph: 'G' },
+  yandex: { name: 'Яндекс', where: 'Яндексе', glyph: 'Я' },
+  ddg: { name: 'DuckDuckGo', where: 'DuckDuckGo', glyph: 'D' },
+  bing: { name: 'Bing', where: 'Bing', glyph: 'B' }
+};
 
 const addr = $('addr');
 let selectOnUp = false;
+let dirty = false;          // пользователь начал печатать — не перебиваем его текст
+let shownTab = null;
+const addrFocused = () => document.hasFocus() && document.activeElement === addr;
 addr.addEventListener('mousedown', () => {
-  selectOnUp = document.activeElement !== addr;
+  selectOnUp = !addrFocused();
 });
 addr.addEventListener('mouseup', (e) => {
   if (selectOnUp) {
@@ -51,18 +64,24 @@ addr.addEventListener('mouseup', (e) => {
   }
   selectOnUp = false;
 });
+addr.addEventListener('input', () => { dirty = true; });
 addr.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     const v = addr.value.trim();
+    dirty = false;
     if (v) api.send('nav:go', v);
     addr.blur();
   } else if (e.key === 'Escape') {
+    dirty = false;
     showUrl(true);
     addr.blur();
     api.send('ui:focus-page');
   }
 });
-addr.addEventListener('blur', () => setTimeout(() => showUrl(false), 0));
+addr.addEventListener('blur', () => {
+  dirty = false;
+  setTimeout(() => showUrl(true), 0);
+});
 
 function prettyUrl(u) {
   if (!u) return '';
@@ -80,14 +99,18 @@ function prettyUrl(u) {
 
 function showUrl(force) {
   if (!state) return;
-  if (!force && document.activeElement === addr) return;
-  addr.value = state.nav.url ? (document.activeElement === addr ? state.nav.url : prettyUrl(state.nav.url)) : '';
+  if (!force && dirty && addrFocused()) return;
+  const u = state.nav.url;
+  const v = u ? (addrFocused() ? u : prettyUrl(u)) : '';
+  if (addr.value !== v) addr.value = v;
 }
 addr.addEventListener('focus', () => {
-  if (state && state.nav.url) addr.value = state.nav.url;
+  if (state && state.nav.url && !dirty) addr.value = state.nav.url;
 });
 
 api.on('focus-address', () => {
+  dirty = false;
+  if (state) addr.value = state.nav.url || '';
   addr.focus();
   addr.select();
 });
@@ -113,6 +136,83 @@ api.on('find-result', (active, total) => {
 });
 
 // ---------------------------------------------------------------- вкладки
+// Вкладки не пересоздаются при каждом обновлении — иначе нажатие на «×» терялось:
+// кнопка исчезала между нажатием и отпусканием мыши, и вкладка не закрывалась.
+const tabEls = new Map();
+
+function makeTab(id) {
+  const el = document.createElement('div');
+  el.draggable = true;
+  const fav = document.createElement('div');
+  fav.className = 'fav';
+  const title = document.createElement('div');
+  title.className = 'title';
+  const x = document.createElement('button');
+  x.className = 'x';
+  x.innerHTML = I.close;
+  x.title = 'Закрыть (Ctrl+W)';
+  x.addEventListener('mousedown', (e) => e.stopPropagation());
+  x.onclick = (e) => {
+    e.stopPropagation();
+    api.send('tab:close', id);
+  };
+  el.append(fav, title, x);
+  el.onmousedown = (e) => {
+    if (e.button === 0) api.send('tab:activate', id);
+    if (e.button === 1) e.preventDefault(); // без «автопрокрутки» колёсиком
+  };
+  el.onauxclick = (e) => {
+    if (e.button === 1) api.send('tab:close', id);
+  };
+  el.oncontextmenu = (e) => {
+    e.preventDefault();
+    api.send('tab:menu', id);
+  };
+  el.ondragstart = (e) => {
+    dragId = id;
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  el.ondragover = (e) => {
+    if (dragId == null) return;
+    e.preventDefault();
+    el.classList.add('drop-before');
+  };
+  el.ondragleave = () => el.classList.remove('drop-before');
+  el.ondrop = (e) => {
+    e.preventDefault();
+    el.classList.remove('drop-before');
+    if (dragId == null || dragId === id || !state) return;
+    const ids = state.tabs.map((z) => z.id);
+    let to = ids.indexOf(id);
+    if (ids.indexOf(dragId) < to) to -= 1;
+    api.send('tab:move', dragId, to);
+    dragId = null;
+  };
+  el.ondragend = () => { dragId = null; };
+  const r = { el, fav, title, favKey: null };
+  tabEls.set(id, r);
+  return r;
+}
+
+function setFav(r, t) {
+  const key = t.loading ? 'load' : t.mode ? 'mode' : t.favicon ? 'img:' + t.favicon
+    : t.url.startsWith('byss://home') ? 'home' : 'search';
+  if (r.favKey === key) return;
+  r.favKey = key;
+  const fav = r.fav;
+  if (key === 'load') fav.innerHTML = '<div class="spin"></div>';
+  else if (key === 'mode') fav.innerHTML = I.shield;
+  else if (key === 'home') fav.innerHTML = I.home;
+  else if (key === 'search') fav.innerHTML = I.search;
+  else {
+    fav.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = t.favicon;
+    img.onerror = () => { fav.innerHTML = I.home; };
+    fav.appendChild(img);
+  }
+}
+
 function render() {
   const s = state;
   document.body.classList.toggle('light', s.theme === 'light');
@@ -123,67 +223,28 @@ function render() {
   const box = $('tabs');
   const width = Math.max(120, $('strip').clientWidth - (s.platform === 'darwin' ? 130 : 200));
   const narrow = s.tabs.length * 120 > width;
-  box.innerHTML = '';
-  for (const t of s.tabs) {
-    const el = document.createElement('div');
-    el.className = 'tab' + (t.id === s.active ? ' active' : '') + (t.mode ? ' mode' : '') + (narrow ? ' narrow' : '');
-    el.title = (t.mode ? t.modeName + ' · ' : '') + t.title;
-    el.draggable = true;
-    const fav = document.createElement('div');
-    fav.className = 'fav';
-    if (t.loading) fav.innerHTML = '<div class="spin"></div>';
-    else if (t.mode) fav.innerHTML = I.shield;
-    else if (t.favicon) {
-      const img = document.createElement('img');
-      img.src = t.favicon;
-      img.onerror = () => { fav.innerHTML = I.home; };
-      fav.appendChild(img);
-    } else fav.innerHTML = t.url.startsWith('byss://home') ? I.home : I.search;
-    const title = document.createElement('div');
-    title.className = 'title';
-    title.textContent = t.title;
-    const x = document.createElement('button');
-    x.className = 'x';
-    x.innerHTML = I.close;
-    x.title = 'Закрыть (Ctrl+W)';
-    x.onclick = (e) => {
-      e.stopPropagation();
-      api.send('tab:close', t.id);
-    };
-    el.append(fav, title, x);
-    el.onmousedown = (e) => {
-      if (e.button === 0) api.send('tab:activate', t.id);
-    };
-    el.onauxclick = (e) => {
-      if (e.button === 1) api.send('tab:close', t.id);
-    };
-    el.oncontextmenu = (e) => {
-      e.preventDefault();
-      api.send('tab:menu', t.id);
-    };
-    el.ondragstart = (e) => {
-      dragId = t.id;
-      e.dataTransfer.effectAllowed = 'move';
-    };
-    el.ondragover = (e) => {
-      if (dragId == null) return;
-      e.preventDefault();
-      el.classList.add('drop-before');
-    };
-    el.ondragleave = () => el.classList.remove('drop-before');
-    el.ondrop = (e) => {
-      e.preventDefault();
-      el.classList.remove('drop-before');
-      if (dragId == null || dragId === t.id) return;
-      const ids = s.tabs.map((z) => z.id);
-      let to = ids.indexOf(t.id);
-      if (ids.indexOf(dragId) < to) to -= 1;
-      api.send('tab:move', dragId, to);
-      dragId = null;
-    };
-    el.ondragend = () => { dragId = null; };
-    box.appendChild(el);
+  const alive = new Set();
+  s.tabs.forEach((t, i) => {
+    alive.add(t.id);
+    const r = tabEls.get(t.id) || makeTab(t.id);
+    const cls = 'tab' + (t.id === s.active ? ' active' : '') + (t.mode ? ' mode' : '') + (narrow ? ' narrow' : '');
+    if (r.el.className.replace(' drop-before', '') !== cls) r.el.className = cls;
+    const tip = (t.mode ? t.modeName + ' · ' : '') + t.title;
+    if (r.el.title !== tip) r.el.title = tip;
+    if (r.title.textContent !== t.title) r.title.textContent = t.title;
+    setFav(r, t);
+    if (box.children[i] !== r.el) box.insertBefore(r.el, box.children[i] || null);
+  });
+  for (const [id, r] of tabEls) {
+    if (!alive.has(id)) {
+      r.el.remove();
+      tabEls.delete(id);
+    }
   }
+
+  const e = ENGINES[s.engine] || ENGINES.google;
+  $('engG').textContent = e.glyph;
+  $('eng').title = 'Поиск из адресной строки: ' + e.name + ' — нажмите, чтобы сменить';
 
   const n = s.nav;
   $('back').disabled = !n.canBack;
@@ -199,11 +260,16 @@ function render() {
   $('tr').style.display = n.site ? '' : 'none';
   $('tr').classList.toggle('on', n.translated);
   $('tr').title = n.translated ? 'Показать оригинал' : 'Перевести страницу';
-  addr.placeholder = n.mode ? n.modeName + ' · поиск или адрес' : 'Поиск или адрес';
+  addr.placeholder = (n.mode ? n.modeName + ' · ' : '') + 'Поиск в ' + e.where + ' или адрес';
   showUrl(false);
 }
 
 api.on('state', (s) => {
+  // другая вкладка — недопечатанный текст из прошлой не нужен
+  if (s.active !== shownTab) {
+    shownTab = s.active;
+    dirty = false;
+  }
   state = s;
   render();
 });

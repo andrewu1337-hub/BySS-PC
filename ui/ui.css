@@ -72,6 +72,10 @@ body.inmode #pill { background: var(--mode); }
 #addr { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; color: var(--text);
   font: 14px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; user-select: text; }
 #addr::placeholder { color: var(--text2); }
+#eng { width: 30px; }
+#engG { width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; font-weight: 700; font-size: 12px;
+  background: rgba(127,127,127,.22); color: var(--text); line-height: 1; }
+#eng:hover #engG { background: rgba(127,127,127,.34); }
 #shield { color: var(--text2); }
 #shield.on { color: var(--text); }
 #count { position: absolute; right: -2px; top: 0; font-size: 9px; font-weight: 700; background: var(--text); color: var(--bg);

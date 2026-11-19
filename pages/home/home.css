@@ -1,4 +1,6 @@
-html, body { height: 100%; overflow: hidden; user-select: none; }
+/* окно низкое — главная прокручивается, а не наезжает плитками на строки поиска */
+html, body { height: 100%; overflow-x: hidden; overflow-y: auto; user-select: none; }
+html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; }
 #wall { position: fixed; inset: 0; z-index: -1; background-color: var(--bg); background-size: cover; background-position: center; }
 #wall.lines { background-image: repeating-linear-gradient(115deg, transparent 0 46px, rgba(255,255,255,.045) 46px 47px); }
 #wall.waves { background-image: radial-gradient(120% 60% at 50% 105%, rgba(255,255,255,.06), transparent 60%),
@@ -10,7 +12,7 @@ body.light #wall.dots { background-image: radial-gradient(rgba(0,0,0,.09) 1px, t
 #wall.custom::after { content: ""; position: absolute; inset: 0; background: linear-gradient(rgba(0,0,0,.25), rgba(0,0,0,.45)); }
 body.light #wall.custom::after { background: linear-gradient(rgba(255,255,255,.35), rgba(255,255,255,.55)); }
 
-main { height: 100%; max-width: 820px; margin: 0 auto; padding: 0 28px; display: flex; flex-direction: column; }
+main { min-height: 100%; max-width: 820px; margin: 0 auto; padding: 0 28px; display: flex; flex-direction: column; }
 header { display: flex; justify-content: space-between; align-items: flex-start; padding-top: 26px; }
 .gap { flex: 0.22; min-height: 18px; }
 
@@ -32,7 +34,7 @@ body.light .srow { background: rgba(255,255,255,.92); }
 .srow input { flex: 1; border: 0; outline: 0; background: none; font-size: 16px; user-select: text; min-width: 0; }
 .srow input::placeholder { color: var(--text2); }
 
-#lower { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; padding: 18px 0; }
+#lower { flex: 1 0 auto; display: flex; align-items: safe center; justify-content: center; padding: 22px 0 26px; }
 #block { width: 100%; display: flex; flex-direction: column; align-items: center; }
 #grid { width: 100%; display: grid; grid-template-columns: repeat(6, 1fr); row-gap: 8px; }
 .cell { display: flex; flex-direction: column; align-items: center; padding: 6px 2px; border-radius: 16px; cursor: default; }

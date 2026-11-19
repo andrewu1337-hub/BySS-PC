@@ -15,22 +15,31 @@ const DEFAULTS = {
     { name: 'Роттердам', lat: 51.9225, lon: 4.47917 },
     { name: 'Кишинёв', lat: 47.00556, lon: 28.8575 }
   ],
-  shortcuts: [
-    { title: 'Google', url: 'https://www.google.com/' },
-    { title: 'Яндекс', url: 'https://ya.ru/' },
-    { title: 'DuckDuckGo', url: 'https://duckduckgo.com/' },
-    { title: 'Переводчик', url: 'https://translate.google.com/' },
-    { title: 'YouTube', url: 'https://www.youtube.com/' },
-    { title: 'Sauto', url: 'https://www.sauto.cz/' },
-    { title: 'mobile.de', url: 'https://www.mobile.de/' },
-    { title: 'AutoScout24', url: 'https://www.autoscout24.de/' }
-  ],
+  shortcuts: null,            // заполняется ниже: обычные сайты + «мои сайты»
   adblock: true,
   allowSites: {},             // сайт → true: трекеры разрешены
+  askedSites: {},             // сайт → true: уже спросили про рекламу и трекеры
   translate: {},              // сайт → 'yes' | 'no'
   restoreTabs: true,
+  window: null,               // размер и положение окна, развёрнуто ли на весь экран
+  installStamp: '',           // какие настройки установщика уже применены
   modes: []                   // режимы BySS: [{ id, name }]
 };
+
+// сайты на главной: обычные и «мои» (их можно не ставить — галочка в установщике)
+const BASE_SITES = [
+  { title: 'Google', url: 'https://www.google.com/' },
+  { title: 'Яндекс', url: 'https://ya.ru/' },
+  { title: 'DuckDuckGo', url: 'https://duckduckgo.com/' },
+  { title: 'Переводчик', url: 'https://translate.google.com/' },
+  { title: 'YouTube', url: 'https://www.youtube.com/' }
+];
+const MY_SITES = [
+  { title: 'Sauto', url: 'https://www.sauto.cz/' },
+  { title: 'mobile.de', url: 'https://www.mobile.de/' },
+  { title: 'AutoScout24', url: 'https://www.autoscout24.de/' }
+];
+DEFAULTS.shortcuts = BASE_SITES.concat(MY_SITES);
 
 class Store {
   constructor(dir) {
@@ -80,4 +89,4 @@ class Store {
   }
 }
 
-module.exports = { Store, DEFAULTS };
+module.exports = { Store, DEFAULTS, BASE_SITES, MY_SITES };

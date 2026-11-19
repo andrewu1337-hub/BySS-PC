@@ -3,12 +3,12 @@
 // загрузки, длинный скриншот и обновления с GitHub.
 
 const {
-  app, BaseWindow, WebContentsView, ipcMain, session, Menu, nativeTheme, shell, dialog, clipboard, protocol, net
+  app, BaseWindow, WebContentsView, ipcMain, session, Menu, nativeTheme, shell, dialog, clipboard, protocol, net, screen
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
-const { Store } = require('./store');
+const { Store, MY_SITES } = require('./store');
 const { AdBlock, baseDomain, hostOf } = require('./adblock');
 
 let autoUpdater = null;
@@ -45,6 +45,9 @@ let findOpen = false;
 let fullscreenTab = null;
 const closed = [];
 const isMac = process.platform === 'darwin';
+
+// значок: лев со щитом на весь квадрат — на тёмной панели задач он не теряется
+const ICON = path.join(__dirname, 'assets', 'icon-win.png');
 
 const COLORS = {
   dark: { bg: '#000000', text: '#FFFFFF' },
@@ -171,19 +174,65 @@ function prepare(ses, incognito) {
   });
 }
 
-// ======================================================================= окно
+// ======================================================================= окно: размер и место
+// Браузер помнит, каким было окно: размер, место и развёрнуто ли на весь экран.
+
+let normalBounds = null;
+
+function savedWindow() {
+  const w = store.get('window');
+  if (!w || typeof w !== 'object') return {};
+  const b = { width: Math.max(520, w.width | 0 || 1280), height: Math.max(360, w.height | 0 || 820) };
+  if (Number.isFinite(w.x) && Number.isFinite(w.y)) {
+    // окно должно хотя бы частично попадать на один из мониторов (монитор могли отключить)
+    const visible = screen.getAllDisplays().some((d) => {
+      const a = d.workArea;
+      return w.x + 80 < a.x + a.width && w.x + b.width - 80 > a.x && w.y + 20 < a.y + a.height && w.y + 20 > a.y - 20;
+    });
+    if (visible) {
+      b.x = w.x;
+      b.y = w.y;
+    }
+  }
+  b.maximized = !!w.maximized;
+  b.fullscreen = !!w.fullscreen;
+  return b;
+}
+
+function rememberBounds() {
+  if (!win || win.isDestroyed() || win.isMaximized() || win.isMinimized() || win.isFullScreen()) return;
+  normalBounds = win.getBounds();
+}
+
+function saveWindow() {
+  if (!win || win.isDestroyed()) return;
+  rememberBounds();
+  const b = normalBounds || win.getBounds();
+  store.set('window', {
+    x: b.x,
+    y: b.y,
+    width: b.width,
+    height: b.height,
+    maximized: win.isMaximized(),
+    // полноэкранное видео не считаем — только F11
+    fullscreen: win.isFullScreen() && !fullscreenTab
+  });
+}
 
 function createWindow() {
   const t = theme();
+  const ws = savedWindow();
   win = new BaseWindow({
-    width: 1280,
-    height: 820,
+    width: ws.width || 1280,
+    height: ws.height || 820,
+    x: ws.x,
+    y: ws.y,
     minWidth: 520,
     minHeight: 360,
     show: false,
     backgroundColor: COLORS[t].bg,
     title: store.get('name') || 'BySS',
-    icon: path.join(__dirname, 'assets', 'icon.png'),
+    icon: ICON,
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     titleBarOverlay: isMac ? undefined : { color: COLORS[t].bg, symbolColor: COLORS[t].text, height: STRIP }
   });
@@ -228,18 +277,28 @@ function createWindow() {
     bubblePending = null;
   });
 
-  win.on('resize', layout);
+  win.on('resize', () => {
+    layout();
+    rememberBounds();
+  });
+  win.on('move', rememberBounds);
   win.on('maximize', layout);
   win.on('unmaximize', layout);
   win.on('enter-full-screen', layout);
   win.on('leave-full-screen', layout);
-  win.on('close', saveSession);
+  win.on('close', () => {
+    saveWindow();
+    saveSession();
+  });
   win.on('closed', () => {
     win = null;
     app.quit();
   });
 
   restoreSession();
+  rememberBounds();
+  if (ws.maximized) win.maximize();
+  if (ws.fullscreen) win.setFullScreen(true);
   layout();
   win.show();
 }
@@ -359,6 +418,7 @@ function activate(id) {
   }
   if (findOpen) closeFind();
   sendState();
+  if (/^https?:/.test(t.url) && !t.view.webContents.isLoading()) setTimeout(() => t.id === activeId && askTrackers(t), 400);
 }
 
 function closeTab(id) {
@@ -398,7 +458,6 @@ function closeTab(id) {
 function navigate(t, url) {
   if (!t || !url) return;
   t.url = url;
-  t.translated = false;
   if (t.view) {
     t.view.webContents.loadURL(url).catch(() => {});
     t.view.webContents.focus();
@@ -440,7 +499,7 @@ function wire(t, wc) {
           height: 720,
           autoHideMenuBar: true,
           backgroundColor: COLORS[theme()].bg,
-          icon: path.join(__dirname, 'assets', 'icon.png')
+          icon: ICON
         }
       };
     }
@@ -462,7 +521,11 @@ function wire(t, wc) {
   });
   const onNav = (e, url) => {
     t.url = url;
-    if (!/translate\.goog|translate\.google/.test(hostOf(url))) t.translated = false;
+    if (t.translated && baseDomain(hostOf(url)) !== t.trBase) {
+      t.translated = false;
+      t.trRun = null;
+    }
+    if (t.noAuto && baseDomain(hostOf(url)) !== t.noAuto) t.noAuto = null;
     sendState();
   };
   wc.on('did-navigate', onNav);
@@ -484,7 +547,8 @@ function wire(t, wc) {
     const css = adblock.cssFor(host);
     if (css) wc.insertCSS(css, { cssOrigin: 'user' }).catch(() => {});
   });
-  wc.on('did-finish-load', () => offerTranslate(t));
+  wc.on('did-finish-load', () => afterLoad(t));
+  wc.on('dom-ready', () => keepTranslating(t));
   wc.on('did-fail-load', (e, code, desc, url, isMain) => {
     if (!isMain || code === -3 || !/^https?:/.test(url)) return;
     wc.loadURL('byss://error/?c=' + encodeURIComponent(code) + '&d=' + encodeURIComponent(desc)
@@ -553,6 +617,7 @@ function snapshot() {
     platform: process.platform,
     theme: theme(),
     name: store.get('name'),
+    engine: store.get('engine'),
     findOpen,
     tabs: tabs.map((x) => ({
       id: x.id,
@@ -745,6 +810,33 @@ function mainMenu() {
   Menu.buildFromTemplate(items).popup({ window: win });
 }
 
+const ENGINE_NAMES = { google: 'Google', yandex: 'Яндекс', ddg: 'DuckDuckGo', bing: 'Bing' };
+
+function engineMenu(x, y) {
+  const cur = ENGINES[store.get('engine')] ? store.get('engine') : 'google';
+  const items = [{ label: 'Поиск из адресной строки', enabled: false }, { type: 'separator' }];
+  for (const k of Object.keys(ENGINE_NAMES)) {
+    items.push({
+      label: ENGINE_NAMES[k],
+      type: 'radio',
+      checked: k === cur,
+      click: () => {
+        store.set('engine', k);
+        broadcastSettings();
+        sendState();
+        toast('Поиск из адресной строки: ' + ENGINE_NAMES[k]);
+        ui.webContents.send('focus-address');
+      }
+    });
+  }
+  const opts = { window: win };
+  if (Number.isFinite(x) && Number.isFinite(y)) {
+    opts.x = Math.round(x);
+    opts.y = Math.round(y);
+  }
+  Menu.buildFromTemplate(items).popup(opts);
+}
+
 function shieldMenu() {
   const t = activeTab();
   if (!t || !/^https?:/.test(t.url)) return;
@@ -891,6 +983,7 @@ async function clearAll() {
     // не всё удалилось — попробуем ещё раз при следующем запуске
   }
   store.set('allowSites', {});
+  store.set('askedSites', {});
   store.set('translate', {});
   closed.length = 0;
   for (const t of tabs.filter((x) => !x.mode)) closeTab(t.id);
@@ -906,21 +999,184 @@ const LANGS = {
   el: 'греческом', ja: 'японском', zh: 'китайском', ko: 'корейском', ar: 'арабском', he: 'иврите'
 };
 
+// Перевод делаем прямо на странице: сайт остаётся настоящим — работают входы, видео,
+// YouTube и сайты вроде sauto.cz, которые через «прокси» Google Переводчика ломались.
+const TR_WORLD = 1077;
+let trScript = null;
+
+function trCode() {
+  if (trScript == null) trScript = fs.readFileSync(path.join(__dirname, 'translate-page.js'), 'utf8');
+  return trScript;
+}
+
+function inWorld(wc, code) {
+  // во время перехода на другую страницу ответ может не прийти — не ждём вечно
+  return Promise.race([
+    wc.executeJavaScriptInIsolatedWorld(TR_WORLD, [{ code }]),
+    new Promise((resolve, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+  ]);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Перевод пачки строк через Google (тот же переводчик, что и в Chrome). */
+let gtxGetOnly = false;
+
+async function gtxAsk(q, tl) {
+  const base = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + tl + '&dt=t';
+  const headers = { 'User-Agent': app.userAgentFallback };
+  let r;
+  if (!gtxGetOnly) {
+    r = await net.fetch(base, {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, headers),
+      body: 'q=' + encodeURIComponent(q)
+    });
+    // сервер не принял POST — дальше спрашиваем обычной ссылкой
+    if (!r.ok && r.status !== 429 && r.status < 500) gtxGetOnly = true;
+  }
+  if (gtxGetOnly) r = await net.fetch(base + '&q=' + encodeURIComponent(q), { headers });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const j = await r.json();
+  return (j && j[0] ? j[0] : []).map((x) => (x && x[0]) || '').join('');
+}
+
+async function gTranslate(texts, tl) {
+  // пачки: длинный текст через POST, короче — если сервер понимает только ссылку
+  const limit = gtxGetOnly ? 700 : 3500;
+  const groups = [];
+  let cur = [];
+  let size = 0;
+  for (const k of texts) {
+    if (cur.length && size + k.length > limit) {
+      groups.push(cur);
+      cur = [];
+      size = 0;
+    }
+    cur.push(k);
+    size += k.length + 1;
+  }
+  if (cur.length) groups.push(cur);
+  const out = [];
+  for (const g of groups) {
+    const parts = (await gtxAsk(g.join('\n'), tl)).split('\n');
+    if (parts.length === g.length) {
+      g.forEach((k, i) => out.push([k, parts[i].trim()]));
+      continue;
+    }
+    // строки «склеились» — переводим по одной (по 6 сразу)
+    for (let i = 0; i < g.length; i += 6) {
+      const chunk = g.slice(i, i + 6);
+      const res = await Promise.all(chunk.map((k) => gtxAsk(k, tl).then((v) => v.trim()).catch(() => k)));
+      chunk.forEach((k, j) => out.push([k, res[j]]));
+    }
+  }
+  return out;
+}
+
+async function translateLoop(t) {
+  const run = {};
+  t.trRun = run;
+  const wc = t.view && t.view.webContents;
+  if (!wc) return;
+  let fails = 0;
+  let idle = 0;
+  while (t.trRun === run && t.translated && !wc.isDestroyed()) {
+    let keys;
+    try {
+      keys = await inWorld(wc, 'window.__byssTr ? window.__byssTr.take(3500) : null');
+      if (keys == null) {
+        await inWorld(wc, trCode());
+        await sleep(150);
+        continue;
+      }
+    } catch (e) {
+      await sleep(500); // страница ещё грузится
+      continue;
+    }
+    if (!keys.length) {
+      // страница спокойна — проверяем реже (новые тексты, прокрутка, YouTube)
+      idle++;
+      await sleep(idle > 20 ? 1500 : 450);
+      continue;
+    }
+    idle = 0;
+    try {
+      const pairs = await gTranslate(keys, 'ru');
+      fails = 0;
+      if (t.trRun !== run || wc.isDestroyed()) return;
+      await inWorld(wc, 'window.__byssTr && window.__byssTr.put(' + JSON.stringify(pairs) + ')').catch(() => {});
+    } catch (e) {
+      fails++;
+      // вернём тексты в очередь, чтобы попробовать ещё раз
+      const back = JSON.stringify(keys.map((k) => [k, k]));
+      await inWorld(wc, 'window.__byssTr && window.__byssTr.put(' + back + ')').catch(() => {});
+      if (fails >= 3) {
+        stopTranslate(t, false);
+        showBubble({
+          icon: 'translate',
+          text: 'Не получилось перевести страницу',
+          sub: /HTTP 429/.test(String(e)) ? 'Google просит подождать — попробуйте через минуту' : 'Нет связи с Google Переводчиком',
+          buttons: [{ id: 'ok', label: 'Закрыть' }, { id: 'retry', label: 'Ещё раз', primary: true }]
+        }, (b) => {
+          if (b === 'retry') startTranslate(t);
+        });
+        return;
+      }
+      await sleep(1500 * fails);
+    }
+  }
+}
+
+function startTranslate(t) {
+  if (!t || !t.view || !/^https?:/.test(t.url)) return;
+  t.translated = true;
+  t.trBase = baseDomain(hostOf(t.url));
+  t.noAuto = null;
+  translateLoop(t);
+  sendState();
+}
+
+function stopTranslate(t, restore) {
+  if (!t) return;
+  t.translated = false;
+  t.trRun = null;
+  if (restore && t.view && !t.view.webContents.isDestroyed()) {
+    inWorld(t.view.webContents, 'window.__byssTr ? window.__byssTr.restore() : true').catch(() => {});
+  }
+  sendState();
+}
+
 function translate(t) {
   if (!t) return;
-  if (t.translated && t.origUrl) {
+  // старая вкладка, переведённая ещё через translate.google — вернуть настоящий сайт
+  if (t.origUrl && /translate\.goog|translate\.google/.test(hostOf(t.url))) {
     const u = t.origUrl;
     t.origUrl = null;
     t.translated = false;
+    t.noAuto = baseDomain(hostOf(u));
     navigate(t, u);
     return;
   }
-  const u = t.url;
-  if (!/^https?:/.test(u)) return;
-  t.origUrl = u;
-  navigate(t, 'https://translate.google.com/translate?sl=auto&tl=ru&hl=ru&u=' + encodeURIComponent(u));
-  t.translated = true;
-  sendState();
+  if (t.translated) {
+    // «Показать оригинал» — и не переводить этот сайт заново сам, пока вы на нём
+    t.noAuto = baseDomain(hostOf(t.url));
+    stopTranslate(t, true);
+    return;
+  }
+  startTranslate(t);
+}
+
+/** Новая страница загрузилась: если вкладка переведена, переводим и её (на том же сайте). */
+function keepTranslating(t) {
+  if (!t.translated) return;
+  if (baseDomain(hostOf(t.url)) !== t.trBase || !/^https?:/.test(t.url)) {
+    t.translated = false;
+    t.trRun = null;
+    sendState();
+    return;
+  }
+  if (!t.trRun) translateLoop(t);
 }
 
 async function offerTranslate(t) {
@@ -928,6 +1184,7 @@ async function offerTranslate(t) {
   const host = hostOf(t.url);
   if (/(^|\.)(google|translate\.goog|youtube|yandex|ya)\./.test(host) || host.endsWith('translate.goog')) return;
   const base = baseDomain(host);
+  if (t.noAuto === base) return;
   const choice = store.get('translate')[base];
   if (choice === 'no') return;
   let lang = '';
@@ -936,9 +1193,9 @@ async function offerTranslate(t) {
   } catch (e) {
     return;
   }
-  if (!lang || lang === 'ru' || lang === 'en' || t.id !== activeId) return;
+  if (!lang || lang === 'ru' || lang === 'en' || t.id !== activeId || t.translated) return;
   if (choice === 'yes') {
-    translate(t);
+    startTranslate(t);
     return;
   }
   const remember = (v) => {
@@ -954,8 +1211,48 @@ async function offerTranslate(t) {
   }, (b) => {
     // «Нет» или крестик — для этого сайта больше не предлагаем
     remember(b === 'yes' ? 'yes' : 'no');
-    if (b === 'yes') translate(t);
+    if (b === 'yes') startTranslate(t);
   });
+}
+
+// ======================================================================= реклама: спросить на новом сайте
+// При первом заходе на сайт браузер спрашивает, блокировать ли на нём рекламу и трекеры.
+
+function askTrackers(t) {
+  return new Promise((resolve) => {
+    if (!t || !t.view || !/^https?:/.test(t.url) || !store.get('adblock') || t.id !== activeId) return resolve();
+    const base = baseDomain(hostOf(t.url));
+    if (!base || (store.get('askedSites') || {})[base] || store.get('allowSites')[base]) return resolve();
+    const mark = () => {
+      const m = Object.assign({}, store.get('askedSites') || {});
+      m[base] = true;
+      store.set('askedSites', m);
+    };
+    showBubble({
+      icon: 'lock',
+      text: 'Блокировать рекламу и трекеры на ' + base + '?',
+      sub: (t.blocked ? 'Уже заблокировано: ' + t.blocked + '. ' : '') + 'Если сайт работает неправильно — разрешите.',
+      buttons: [{ id: 'allow', label: 'Разрешить' }, { id: 'block', label: 'Блокировать', primary: true }],
+      timeout: 20000
+    }, (b) => {
+      mark();
+      if (b === 'allow') {
+        const a = Object.assign({}, store.get('allowSites'));
+        a[base] = true;
+        store.set('allowSites', a);
+        sendState();
+        if (t.view) t.view.webContents.reload();
+        toast('На ' + base + ' реклама и трекеры разрешены');
+        return resolve();
+      }
+      resolve();
+    }, () => resolve());
+  });
+}
+
+async function afterLoad(t) {
+  await askTrackers(t);
+  offerTranslate(t);
 }
 
 // ======================================================================= главная: ярлыки
@@ -1392,6 +1689,7 @@ function setupIpc() {
   ipcMain.on('ui:menu', (e) => fromUi(e) && mainMenu());
   ipcMain.on('ui:shield', (e) => fromUi(e) && shieldMenu());
   ipcMain.on('ui:translate', (e) => fromUi(e) && translate(activeTab()));
+  ipcMain.on('ui:engine', (e, x, y) => fromUi(e) && engineMenu(x, y));
   ipcMain.on('ui:focus-page', (e) => {
     const t = activeTab();
     if (fromUi(e) && t && t.view) t.view.webContents.focus();
@@ -1431,7 +1729,7 @@ function setupIpc() {
   page('settings', (e) => settingsForPage(tabByWc(e.sender.id)));
   page('set', (e, key, value) => {
     const allowed = ['name', 'showBrand', 'theme', 'wallpaper', 'engines', 'engine', 'cities', 'shortcuts', 'adblock',
-      'restoreTabs', 'allowSites', 'translate'];
+      'restoreTabs', 'allowSites', 'askedSites', 'translate'];
     if (!allowed.includes(key)) return false;
     store.set(key, value);
     if (key === 'theme') applyTheme();
@@ -1542,12 +1840,49 @@ app.on('second-instance', (e, argv) => {
   else newTab(HOME);
 });
 
+// Галочка «мои сайты» из установщика: установщик кладёт install-options.json рядом с app.asar.
+function applyInstallOptions() {
+  if (!app.isPackaged) return;
+  const f = path.join(process.resourcesPath, 'install-options.json');
+  let st;
+  try {
+    st = fs.statSync(f);
+  } catch (e) {
+    return;
+  }
+  const stamp = String(Math.round(st.mtimeMs));
+  if (store.get('installStamp') === stamp) return;
+  let o = {};
+  try {
+    o = JSON.parse(fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, ''));
+  } catch (e) {
+    o = {};
+  }
+  store.set('installStamp', stamp);
+  const key = (u) => hostOf(u).replace(/^www\./, '');
+  const mine = new Set(MY_SITES.map((m) => key(m.url)));
+  let list = (store.get('shortcuts') || []).slice();
+  if (o.mySites === false) {
+    list = list.filter((x) => !mine.has(key(x.url)));
+  } else {
+    for (const m of MY_SITES) if (!list.some((x) => key(x.url) === key(m.url))) list.push(Object.assign({}, m));
+  }
+  store.set('shortcuts', list);
+}
+
+if (process.platform === 'win32') app.setAppUserModelId('app.byss.desktop');
+
 app.whenReady().then(async () => {
   // без «Electron» в названии браузера — сайты (и вход в Google) видят обычный Chrome
   app.userAgentFallback = app.userAgentFallback
     .replace(/\s?Electron\/[\d.]+/i, '')
     .replace(/\s?byss\/[\d.]+/i, '');
   store = new Store(app.getPath('userData'));
+  try {
+    applyInstallOptions();
+  } catch (e) {
+    // не страшно — главная останется как была
+  }
   nativeTheme.themeSource = theme();
   // на Mac без меню «Правка» не работают ⌘C / ⌘V — оставляем только его
   Menu.setApplicationMenu(isMac ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }]) : null);

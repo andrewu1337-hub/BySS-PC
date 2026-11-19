@@ -30,6 +30,7 @@
       "preload-ui.js",
       "preload-page.js",
       "preload-bubble.js",
+      "translate-page.js",
       "ui/**",
       "bubble/**",
       "pages/**",
@@ -46,11 +47,17 @@
         }
       ],
       "artifactName": "BySS-Setup.${ext}",
-      "icon": "assets/icon.png"
+      "icon": "assets/icon-win.png"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
       "perMachine": false,
+      "installerLanguages": [
+        "ru_RU"
+      ],
+      "language": "1049",
+      "include": "build/installer.nsh",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "BySS",
