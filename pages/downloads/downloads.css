@@ -1,0 +1,30 @@
+#wrap { max-width: 860px; margin: 0 auto; padding: 30px 24px 60px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+h1 { font-size: 24px; font-weight: 600; margin: 0; }
+.tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tools .field { width: 240px; }
+.day { color: var(--text2); font-size: 12.5px; font-weight: 600; margin: 18px 6px 8px; text-transform: uppercase; letter-spacing: .04em; }
+.group { background: var(--card); border-radius: 20px; padding: 4px 8px; }
+.d { display: flex; align-items: center; gap: 14px; padding: 12px 10px; border-bottom: 1px solid var(--line); }
+.d:last-child { border-bottom: 0; }
+.ic { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 10px; background: var(--card2); }
+.ic img { width: 32px; height: 32px; }
+.ic svg { width: 20px; height: 20px; color: var(--text2); }
+.ic.has { background: none; }
+.info { flex: 1; min-width: 0; }
+.nm { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nm.link { cursor: pointer; }
+.nm.link:hover { text-decoration: underline; }
+.d.gone .nm { color: var(--text2); text-decoration: line-through; }
+.sub { color: var(--text2); font-size: 12.5px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar { height: 4px; border-radius: 2px; background: var(--card2); margin-top: 7px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--text); border-radius: 2px; transition: width .2s; }
+.acts { display: flex; gap: 6px; flex: none; align-items: center; }
+.acts .btn { padding: 7px 13px; font-size: 13px; }
+.x { border: 0; background: none; color: var(--text2); width: 30px; height: 30px; border-radius: 8px; padding: 6px; }
+.x:hover { background: rgba(127,127,127,.18); color: var(--text); }
+.x svg { width: 100%; height: 100%; }
+.empty { text-align: center; color: var(--text2); padding: 70px 20px; }
+.empty svg { width: 46px; height: 46px; display: block; margin: 0 auto 14px; opacity: .6; }
+.note { color: var(--text2); font-size: 12px; margin: 22px 6px 0; line-height: 1.5; }
+.tag { display: inline-block; font-size: 11px; background: var(--mode); border-radius: 6px; padding: 1px 6px; margin-left: 6px; color: var(--text); }

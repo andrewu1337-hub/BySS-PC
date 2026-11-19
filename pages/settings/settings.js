@@ -126,9 +126,11 @@ function home(box) {
   box.appendChild(el('h2', '', 'Главная и поиск'));
   const g = el('div', 'group');
   g.appendChild(row('Поиск из адресной строки', null, select(ENGINES, S.engine, (v) => set('engine', v))));
-  const eng = (S.engines || ['google', 'yandex', 'ddg']).slice();
-  ['Первая строка поиска', 'Вторая строка поиска', 'Третья строка поиска'].forEach((label, i) => {
-    g.appendChild(row(label, 'На главной странице', select(ENGINES, eng[i], (v) => {
+  const eng = (S.engines || ['google', 'yandex', 'currency']).slice();
+  const THIRD = [['currency', 'Конвертер валют']].concat(ENGINES);
+  ['Первая строка поиска', 'Вторая строка поиска', 'Третья строка'].forEach((label, i) => {
+    const sub = i === 2 ? 'На главной: конвертер валют или ещё один поиск' : 'На главной странице';
+    g.appendChild(row(label, sub, select(i === 2 ? THIRD : ENGINES, eng[i], (v) => {
       eng[i] = v;
       set('engines', eng.slice());
     })));

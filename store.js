@@ -9,7 +9,8 @@ const DEFAULTS = {
   showBrand: true,
   theme: 'dark',              // dark | light
   wallpaper: 'lines',         // lines | waves | dots | black | custom
-  engines: ['google', 'yandex', 'ddg'],
+  engines: ['google', 'yandex', 'currency'], // третья строка — конвертер валют
+  currency: { base: 'EUR', list: ['MDL', 'USD', 'RON', 'UAH', 'CZK', 'GBP'], amount: 1 },
   engine: 'google',           // поиск из адресной строки
   cities: [
     { name: 'Роттердам', lat: 51.9225, lon: 4.47917 },
@@ -23,7 +24,8 @@ const DEFAULTS = {
   restoreTabs: true,
   window: null,               // размер и положение окна, развёрнуто ли на весь экран
   installStamp: '',           // какие настройки установщика уже применены
-  modes: []                   // режимы BySS: [{ id, name }]
+  modes: [],                  // режимы BySS: [{ id, name }]
+  downloads: []               // скачанные файлы (без режимов BySS)
 };
 
 // сайты на главной: обычные и «мои» (их можно не ставить — галочка в установщике)

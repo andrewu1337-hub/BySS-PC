@@ -41,7 +41,11 @@ function apply(s) {
 function renderSearch() {
   const box = document.getElementById('search');
   box.innerHTML = '';
-  (S.engines || ['google', 'yandex', 'ddg']).forEach((key, i) => {
+  (S.engines || ['google', 'yandex', 'currency']).forEach((key, i) => {
+    if (key === 'currency') {
+      if (i === 2) box.appendChild(fxRow());
+      return;
+    }
     const e = ENGINES[key] || ENGINES.google;
     const row = document.createElement('div');
     row.className = 'srow';
@@ -115,11 +119,47 @@ function cell(sc, i) {
     if (!src) return;
     const img = document.createElement('img');
     img.src = src.url;
-    if (src.small) img.className = 'small';
+    img.alt = '';
+    if (src.bleed) img.className = 'bleed';
+    tile.style.background = ''; // цветной фон — только для буквы; под значком — обычная плитка
     tile.innerHTML = '';
     tile.appendChild(img);
   });
   return c;
+}
+
+// Все значки — одного размера: рисунок без полей вписываем в одинаковую рамку на плитке.
+// Значок «на всю плитку» (свой цветной фон, как у YouTube) в светлой теме показываем целиком.
+const TILE_PX = 192;   // плитка 60 точек × до 3× плотности экрана
+const CONTENT = 0.6;   // рисунок занимает 60% плитки — как буквы и значки на телефоне
+
+function bbox(data, w, h, isInk) {
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (isInk((y * w + x) * 4)) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+  }
+  return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+function fitInto(src, box, out) {
+  const cv = document.createElement('canvas');
+  cv.width = out;
+  cv.height = out;
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  const room = out * CONTENT;
+  const k = Math.min(room / box.w, room / box.h);
+  const w = box.w * k, h = box.h * k;
+  ctx.drawImage(src, box.x, box.y, box.w, box.h, (out - w) / 2, (out - h) / 2, w, h);
+  return cv.toDataURL('image/png');
 }
 
 async function loadIcon(url) {
@@ -134,23 +174,50 @@ async function loadIcon(url) {
       im.onerror = () => res(null);
       im.src = data;
     });
-    if (!img || !img.naturalWidth) return null;
-    const small = img.naturalWidth < 96;
-    if (S.theme === 'light') return { url: data, small };
-    const size = Math.min(256, Math.max(img.naturalWidth, img.naturalHeight));
+    if (!img || !(img.naturalWidth || img.width)) return null;
+    // рисуем исходник крупно (векторный — в полном качестве), сохраняя пропорции
+    const N = 256;
+    const iw = img.naturalWidth || N, ih = img.naturalHeight || N;
+    const k = N / Math.max(iw, ih);
     const cv = document.createElement('canvas');
-    cv.width = size;
-    cv.height = size;
+    cv.width = N;
+    cv.height = N;
     const ctx = cv.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(img, 0, 0, size, size);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, (N - iw * k) / 2, (N - ih * k) / 2, iw * k, ih * k);
+    let id;
     try {
-      const out = blackTile(ctx.getImageData(0, 0, size, size));
-      const id = new ImageData(out.data, size, size);
-      ctx.clearRect(0, 0, size, size);
-      ctx.putImageData(id, 0, 0);
-      return { url: cv.toDataURL('image/png'), small };
+      id = ctx.getImageData(0, 0, N, N);
     } catch (e) {
-      return { url: data, small };
+      return { url: data };
+    }
+    const d = id.data;
+    const corner = (x, y) => (y * N + x) * 4;
+    const cs = [corner(4, 4), corner(N - 5, 4), corner(4, N - 5), corner(N - 5, N - 5)];
+    const opaque = cs.every((o) => d[o + 3] > 200);
+    if (S.theme === 'light') {
+      if (opaque) {
+        const o = cs[0];
+        const light = (d[o] + d[o + 1] + d[o + 2]) / 3 > 225;
+        if (!light) return { url: cv.toDataURL('image/png'), bleed: true }; // свой цветной фон — на всю плитку
+        // белая подложка — убираем её из расчёта рамки
+        const box = bbox(d, N, N, (i) => d[i + 3] > 24 && Math.abs(d[i] - d[o]) + Math.abs(d[i + 1] - d[o + 1]) + Math.abs(d[i + 2] - d[o + 2]) > 40);
+        return box ? { url: fitInto(cv, box, TILE_PX) } : { url: cv.toDataURL('image/png'), bleed: true };
+      }
+      const box = bbox(d, N, N, (i) => d[i + 3] > 24);
+      return box ? { url: fitInto(cv, box, TILE_PX) } : null;
+    }
+    try {
+      const out = blackTile(id);
+      const res = new ImageData(out.data, N, N);
+      ctx.clearRect(0, 0, N, N);
+      ctx.putImageData(res, 0, 0);
+      const box = bbox(out.data, N, N, (i) => out.data[i + 3] > 24);
+      if (!box) return null;
+      return { url: fitInto(cv, box, TILE_PX) };
+    } catch (e) {
+      return { url: data };
     }
   })();
   icons.set(key, p);

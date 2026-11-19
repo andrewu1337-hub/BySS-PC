@@ -3,7 +3,8 @@
 // загрузки, длинный скриншот и обновления с GitHub.
 
 const {
-  app, BaseWindow, WebContentsView, ipcMain, session, Menu, nativeTheme, shell, dialog, clipboard, protocol, net, screen
+  app, BaseWindow, WebContentsView, ipcMain, session, Menu, nativeTheme, shell, dialog, clipboard, protocol, net, screen,
+  nativeImage
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -28,6 +29,7 @@ if (!app.requestSingleInstanceLock()) {
 
 const HOME = 'byss://home/';
 const SETTINGS = 'byss://settings/';
+const DOWNLOADS = 'byss://downloads/';
 const MAX_TABS = 50;
 const STRIP = 40;   // ряд вкладок
 const BAR = 46;     // адресная строка
@@ -46,8 +48,8 @@ let fullscreenTab = null;
 const closed = [];
 const isMac = process.platform === 'darwin';
 
-// значок: лев со щитом на весь квадрат — на тёмной панели задач он не теряется
-const ICON = path.join(__dirname, 'assets', 'icon-win.png');
+// значок: голова льва без фона, с тёмным контуром — видна и на светлой, и на тёмной панели задач
+const ICON = path.join(__dirname, 'assets', 'lion.png');
 
 const COLORS = {
   dark: { bg: '#000000', text: '#FFFFFF' },
@@ -687,6 +689,8 @@ function shortcuts(e, input, t) {
   else if (ctrl && k === 'p') {
     if (wc) wc.print();
   } else if (ctrl && k === 'd') addToHome(cur);
+  else if (ctrl && k === 'j') openPage(DOWNLOADS);
+  else if (ctrl && input.shift && k === 's') shotArea(cur);
   else if (k === 'f11') win.setFullScreen(!win.isFullScreen());
   else if (k === 'f12' || (ctrl && input.shift && k === 'i')) {
     if (wc) wc.toggleDevTools();
@@ -774,6 +778,48 @@ async function deleteMode(id) {
 
 // ======================================================================= меню
 
+function siteBlocked(t) {
+  if (!t || !/^https?:/.test(t.url) || !store.get('adblock')) return false;
+  return !store.get('allowSites')[baseDomain(hostOf(t.url))];
+}
+
+/** Быстрый переключатель, как на телефоне: реклама и слежка на открытом сайте. */
+function toggleSiteBlock(t) {
+  if (!t || !/^https?:/.test(t.url)) return;
+  const base = baseDomain(hostOf(t.url));
+  const a = Object.assign({}, store.get('allowSites'));
+  let on;
+  if (!store.get('adblock')) {
+    store.set('adblock', true); // была выключена везде — включаем и для этого сайта
+    delete a[base];
+    on = true;
+  } else if (a[base]) {
+    delete a[base];
+    on = true;
+  } else {
+    a[base] = true;
+    on = false;
+  }
+  store.set('allowSites', a);
+  const asked = Object.assign({}, store.get('askedSites') || {});
+  asked[base] = true; // выбрали сами — больше не спрашиваем про этот сайт
+  store.set('askedSites', asked);
+  if (t.view) t.view.webContents.reload();
+  sendState();
+  toast(on ? 'Реклама и слежка на ' + base + ' блокируются' : 'На ' + base + ' реклама и трекеры разрешены');
+}
+
+function shotMenu(t) {
+  return {
+    label: 'Скриншот',
+    submenu: [
+      { label: 'Видимая часть', click: () => shotVisible(t) },
+      { label: 'Вся страница', click: () => shotFull(t) },
+      { label: 'Выделить область…', accelerator: 'CmdOrCtrl+Shift+S', click: () => shotArea(t) }
+    ]
+  };
+}
+
 function mainMenu() {
   const t = activeTab();
   const site = t && /^https?:/.test(t.url);
@@ -790,13 +836,13 @@ function mainMenu() {
   });
   if (site) {
     items.push({ label: t.translated ? 'Показать оригинал' : 'Перевести страницу', click: () => translate(t) });
-    items.push({ label: 'Длинный скриншот', click: () => longShot(t) });
+    items.push(shotMenu(t));
     items.push({ label: 'Добавить на главную', accelerator: 'CmdOrCtrl+D', click: () => addToHome(t) });
     items.push({ label: 'Скопировать ссылку', click: () => { clipboard.writeText(t.url); toast('Ссылка скопирована'); } });
   }
   items.push({ label: 'Найти на странице', accelerator: 'CmdOrCtrl+F', click: openFind });
   items.push({ label: 'Печать', accelerator: 'CmdOrCtrl+P', click: () => t && t.view && t.view.webContents.print() });
-  items.push({ label: 'Скачанные файлы', click: () => shell.openPath(app.getPath('downloads')) });
+  items.push({ label: 'Скачанные файлы', accelerator: 'CmdOrCtrl+J', click: () => openPage(DOWNLOADS) });
   items.push({ label: 'Обновить браузер', click: () => checkUpdates(true) });
   items.push({ label: 'Доп. настройки', click: () => openSettings() });
   items.push({ label: theme() === 'dark' ? 'Светлая тема' : 'Тёмная тема', click: () => setTheme(theme() === 'dark' ? 'light' : 'dark') });
@@ -805,6 +851,17 @@ function mainMenu() {
   }
   // как на телефоне: сначала пункты с длинным текстом, «Удалить все данные» — в самом конце
   items.sort((a, b) => b.label.length - a.label.length);
+  if (site) {
+    // сверху — переключатель рекламы и слежки для этого сайта (как в меню на телефоне)
+    const n = t.blocked || 0;
+    items.unshift({ type: 'separator' });
+    items.unshift({
+      label: 'Блокировать рекламу и слежку' + (siteBlocked(t) && n ? '  ·  убрано ' + n : ''),
+      type: 'checkbox',
+      checked: siteBlocked(t),
+      click: () => toggleSiteBlock(t)
+    });
+  }
   items.push({ type: 'separator' });
   items.push({ label: 'Удалить все данные', click: clearAll });
   Menu.buildFromTemplate(items).popup({ window: win });
@@ -850,15 +907,7 @@ function shieldMenu() {
       label: 'Блокировать рекламу и трекеры на этом сайте',
       type: 'checkbox',
       checked: !allowed && store.get('adblock'),
-      enabled: !!store.get('adblock'),
-      click: () => {
-        const a = Object.assign({}, store.get('allowSites'));
-        if (allowed) delete a[base];
-        else a[base] = true;
-        store.set('allowSites', a);
-        if (t.view) t.view.webContents.reload();
-        sendState();
-      }
+      click: () => toggleSiteBlock(t)
     },
     {
       label: 'Блокировка везде',
@@ -913,7 +962,7 @@ function pageMenu(t, wc, p) {
   if (/^https?:/.test(t.url)) {
     items.push({ type: 'separator' });
     items.push({ label: t.translated ? 'Показать оригинал' : 'Перевести страницу', click: () => translate(t) });
-    items.push({ label: 'Длинный скриншот', click: () => longShot(t) });
+    items.push(shotMenu(t));
   }
   items.push({ type: 'separator' });
   items.push({ label: 'Просмотреть код', click: () => wc.inspectElement(p.x, p.y) });
@@ -926,9 +975,14 @@ function lastModeOrNew() {
 }
 
 function openSettings() {
-  const t = tabs.find((x) => x.url.startsWith(SETTINGS));
+  openPage(SETTINGS);
+}
+
+/** Внутренняя страница: уже открыта — переключиться, нет — новая вкладка. */
+function openPage(url) {
+  const t = tabs.find((x) => x.url.startsWith(url));
   if (t) activate(t.id);
-  else newTab(SETTINGS);
+  else newTab(url);
 }
 
 function setTheme(th) {
@@ -985,6 +1039,9 @@ async function clearAll() {
   store.set('allowSites', {});
   store.set('askedSites', {});
   store.set('translate', {});
+  store.set('downloads', []);
+  memDownloads.length = 0;
+  pushDownloads();
   closed.length = 0;
   for (const t of tabs.filter((x) => !x.mode)) closeTab(t.id);
   toast('Все данные удалены');
@@ -1275,61 +1332,98 @@ function addToHome(t) {
   toast('Добавлено на главную');
 }
 
-const iconDir = () => path.join(app.getPath('userData'), 'site_icons');
+// Значки сайтов для главной: ищем самый крупный и чёткий — значки из манифеста сайта,
+// apple-touch-icon, крупные <link rel=icon>, векторные (svg); favicon.ico — в последнюю очередь.
+const iconDir = () => path.join(app.getPath('userData'), 'site_icons2');
 
 async function siteIcon(url) {
   const host = hostOf(url);
   if (!host) return null;
-  const file = path.join(iconDir(), host.replace(/[^a-z0-9.-]/g, '_') + '.img');
+  const file = path.join(iconDir(), host.replace(/[^a-z0-9.-]/g, '_') + '.json');
   try {
     const st = fs.statSync(file);
     if (Date.now() - st.mtimeMs < 14 * 24 * 3600 * 1000) {
-      const buf = fs.readFileSync(file);
-      return buf.length ? 'data:image/png;base64,' + buf.toString('base64') : null;
+      const c = JSON.parse(fs.readFileSync(file, 'utf8'));
+      return c && c.data ? 'data:' + c.type + ';base64,' + c.data : null;
     }
   } catch (e) {
     // ещё нет
   }
-  let best = null;
+  const cands = [];
+  const add = (u, size, base, svg) => {
+    try {
+      const abs = new URL(u, base).toString();
+      if (!/^https?:/.test(abs) || cands.some((c) => c.url === abs)) return;
+      cands.push({ url: abs, size, svg: !!svg });
+    } catch (e) {
+      // кривая ссылка
+    }
+  };
+  let origin = 'https://' + host + '/';
   try {
-    const page = await fetchText('https://' + host + '/');
-    const links = [...page.matchAll(/<link\b[^>]*>/gi)].map((m) => m[0]);
-    let bestSize = -1;
+    const pg = await fetchText(origin);
+    origin = pg.url || origin;
+    const links = [...pg.text.matchAll(/<link\b[^>]*>/gi)].map((m) => m[0]);
     for (const l of links) {
-      const rel = (l.match(/rel=["']?([^"'>]+)/i) || [])[1] || '';
-      if (!/icon/i.test(rel)) continue;
-      const href = (l.match(/href=["']?([^"'\s>]+)/i) || [])[1];
+      const rel = ((l.match(/\brel\s*=\s*["']?([^"'>]+)/i) || [])[1] || '').toLowerCase();
+      const href = (l.match(/\bhref\s*=\s*["']?([^"'\s>]+)/i) || [])[1];
       if (!href || href.startsWith('data:')) continue;
-      const sizes = (l.match(/sizes=["']?(\d+)/i) || [])[1];
-      let size = sizes ? Number(sizes) : (/apple-touch/i.test(rel) ? 180 : 32);
-      if (/\.svg(\?|$)/i.test(href)) size = Math.min(size, 40);
-      if (size > bestSize) {
-        bestSize = size;
-        best = new URL(href, 'https://' + host + '/').toString();
+      if (rel.includes('manifest')) {
+        try {
+          const murl = new URL(href, origin).toString();
+          const r = await net.fetch(murl, { headers: { 'User-Agent': app.userAgentFallback } });
+          const m = JSON.parse(await r.text());
+          for (const ic of (m.icons || [])) {
+            if (!ic.src || /monochrome/i.test(ic.purpose || '')) continue;
+            const sz = Math.max(0, ...String(ic.sizes || '').split(/\s+/).map((x) => parseInt(x, 10) || 0));
+            const svg = /svg/i.test(ic.type || '') || /\.svg(\?|$)/i.test(ic.src);
+            add(ic.src, svg ? 512 : sz, murl, svg);
+          }
+        } catch (e) {
+          // манифеста нет
+        }
+        continue;
       }
+      if (!/icon/.test(rel) || rel.includes('mask-icon')) continue;
+      const sizes = (l.match(/\bsizes\s*=\s*["']?(\d+)/i) || [])[1];
+      const any = /sizes\s*=\s*["']?any/i.test(l);
+      const svg = /\.svg(\?|$)/i.test(href) || /type\s*=\s*["']image\/svg/i.test(l);
+      const size = svg || any ? 512 : sizes ? Number(sizes) : (rel.includes('apple-touch') ? 180 : 32);
+      add(href, size, origin, svg);
     }
   } catch (e) {
-    best = null;
+    // сайт не открылся — пробуем стандартные адреса
   }
-  const tryUrls = [best, 'https://' + host + '/apple-touch-icon.png', 'https://' + host + '/favicon.ico'].filter(Boolean);
-  for (const u of tryUrls) {
+  add('/apple-touch-icon.png', 180, origin);
+  add('/apple-touch-icon-precomposed.png', 179, origin);
+  add('/favicon.ico', 40, origin);
+  // крупнее — лучше, но огромные (>512) не нужны: чёткости хватает и так
+  const score = (c) => (c.size >= 96 ? 1000 - Math.abs(256 - Math.min(c.size, 512)) : c.size);
+  cands.sort((a, b) => score(b) - score(a));
+  for (const c of cands.slice(0, 8)) {
     try {
-      const r = await net.fetch(u, { headers: { 'User-Agent': app.userAgentFallback } });
+      const r = await net.fetch(c.url, { headers: { 'User-Agent': app.userAgentFallback } });
       if (!r.ok) continue;
-      const type = r.headers.get('content-type') || '';
-      if (type.includes('svg') || type.includes('html')) continue;
+      let type = (r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      if (type.includes('html') || type.includes('json') || type.includes('text/plain')) continue;
       const buf = Buffer.from(await r.arrayBuffer());
       if (buf.length < 100) continue;
+      if (c.svg || type.includes('svg')) {
+        if (!/<svg[\s>]/i.test(buf.slice(0, 4000).toString('utf8'))) continue;
+        type = 'image/svg+xml';
+      } else if (!type.startsWith('image/')) {
+        type = /\.ico(\?|$)/i.test(c.url) ? 'image/x-icon' : 'image/png';
+      }
       fs.mkdirSync(iconDir(), { recursive: true });
-      fs.writeFileSync(file, buf);
-      return 'data:' + (type || 'image/png') + ';base64,' + buf.toString('base64');
+      fs.writeFileSync(file, JSON.stringify({ type, data: buf.toString('base64') }));
+      return 'data:' + type + ';base64,' + buf.toString('base64');
     } catch (e) {
       // следующий вариант
     }
   }
   try {
     fs.mkdirSync(iconDir(), { recursive: true });
-    fs.writeFileSync(file, Buffer.alloc(0)); // нет значка — не спрашиваем 2 недели
+    fs.writeFileSync(file, '{}'); // нет значка — не спрашиваем 2 недели
   } catch (e) {
     // не страшно
   }
@@ -1339,10 +1433,48 @@ async function siteIcon(url) {
 async function fetchText(url) {
   const r = await net.fetch(url, { headers: { 'User-Agent': app.userAgentFallback, Accept: 'text/html' } });
   const text = await r.text();
-  return text.slice(0, 400000);
+  return { text: text.slice(0, 400000), url: r.url || url };
 }
 
 // ======================================================================= загрузки
+
+// Список загрузок (как «Скачанные файлы» на телефоне): обычные — в настройках, из режимов BySS —
+// только в памяти до выхода (сами файлы остаются в «Загрузках»).
+const memDownloads = [];
+const liveDownloads = new Map(); // id → DownloadItem
+
+function allDownloads() {
+  return memDownloads.concat(store.get('downloads') || []).sort((a, b) => b.time - a.time);
+}
+
+function findDownload(id) {
+  return allDownloads().find((d) => d.id === id) || null;
+}
+
+function saveDownloads() {
+  const list = (store.get('downloads') || []).slice(0, 300);
+  store.set('downloads', list);
+}
+
+function downloadsForPage() {
+  return allDownloads().map((d) => Object.assign({}, d, {
+    exists: d.state === 'completed' ? fs.existsSync(d.file) : false,
+    live: liveDownloads.has(d.id)
+  }));
+}
+
+let dlPushTimer = null;
+function pushDownloads() {
+  clearTimeout(dlPushTimer);
+  dlPushTimer = setTimeout(() => {
+    const list = downloadsForPage();
+    for (const t of tabs) {
+      if (t.view && !t.view.webContents.isDestroyed() && t.url.startsWith(DOWNLOADS)) {
+        t.view.webContents.send('page:downloads', list);
+      }
+    }
+  }, 120);
+}
 
 function download(item, incognito) {
   const dir = app.getPath('downloads');
@@ -1352,31 +1484,54 @@ function download(item, incognito) {
   const stem = name.slice(0, name.length - ext.length);
   for (let i = 1; fs.existsSync(file) && i < 500; i++) file = path.join(dir, stem + ' (' + i + ')' + ext);
   item.setSavePath(file);
-  const id = 'dl' + Date.now();
+  const id = 'dl' + Date.now() + Math.floor(Math.random() * 1000);
+  const entry = {
+    id, name: path.basename(file), file, url: item.getURL(), size: item.getTotalBytes(), got: 0,
+    state: 'progress', time: Date.now(), mode: !!incognito
+  };
+  if (incognito) memDownloads.unshift(entry);
+  else {
+    const list = (store.get('downloads') || []).slice();
+    list.unshift(entry);
+    store.set('downloads', list.slice(0, 300));
+  }
+  liveDownloads.set(id, item);
+  pushDownloads();
   let last = 0;
   item.on('updated', (e, state) => {
+    entry.got = item.getReceivedBytes();
+    entry.size = item.getTotalBytes();
+    entry.state = state === 'interrupted' ? 'interrupted' : (item.isPaused() ? 'paused' : 'progress');
+    pushDownloads();
     if (Date.now() - last < 300) return;
     last = Date.now();
-    const total = item.getTotalBytes();
-    const got = item.getReceivedBytes();
+    const total = entry.size;
+    const got = entry.got;
     showBubble({
       id,
       icon: 'download',
       text: 'Скачиваю ' + path.basename(file),
       sub: total ? mb(got) + ' из ' + mb(total) : mb(got),
       progress: total ? got / total : -1,
-      buttons: [{ id: 'cancel', label: 'Отмена' }]
+      buttons: [{ id: 'list', label: 'Все загрузки' }, { id: 'cancel', label: 'Отмена' }]
     }, (b) => {
       if (b === 'cancel') item.cancel();
+      if (b === 'list') openPage(DOWNLOADS);
     });
   });
   item.once('done', (e, state) => {
+    liveDownloads.delete(id);
+    entry.state = state;
+    entry.got = item.getReceivedBytes();
+    if (!entry.size) entry.size = entry.got;
+    if (!incognito) saveDownloads();
+    pushDownloads();
     if (state === 'completed') {
       showBubble({
         id,
         icon: 'download',
         text: 'Скачано: ' + path.basename(file),
-        sub: incognito ? 'Файл сохранён в «Загрузки» — он останется и после удаления режима' : 'Папка «Загрузки»',
+        sub: incognito ? 'Файл сохранён в «Загрузки» — он останется и после удаления режима' : 'Папка «Загрузки» · Ctrl+J — все загрузки',
         buttons: [{ id: 'folder', label: 'Показать в папке' }, { id: 'open', label: 'Открыть', primary: true }],
         timeout: 9000
       }, (b) => {
@@ -1391,52 +1546,116 @@ function download(item, incognito) {
   });
 }
 
+function removeDownload(id) {
+  const i = memDownloads.findIndex((d) => d.id === id);
+  if (i >= 0) memDownloads.splice(i, 1);
+  store.set('downloads', (store.get('downloads') || []).filter((d) => d.id !== id));
+  pushDownloads();
+}
+
+const fileIcons = new Map();
+async function downloadIcon(id) {
+  const d = findDownload(id);
+  if (!d || !fs.existsSync(d.file)) return null;
+  const key = path.extname(d.file).toLowerCase() || d.file;
+  // у .exe и ярлыков свой значок у каждого файла
+  const own = ['.exe', '.lnk', '.ico', ''].includes(key);
+  if (!own && fileIcons.has(key)) return fileIcons.get(key);
+  try {
+    const img = await app.getFileIcon(d.file, { size: 'normal' });
+    const url = img.isEmpty() ? null : img.toDataURL();
+    if (!own) fileIcons.set(key, url);
+    return url;
+  } catch (e) {
+    return null;
+  }
+}
+
 function mb(b) {
   return (b / 1048576).toFixed(1).replace('.', ',') + ' МБ';
 }
 
-// ======================================================================= длинный скриншот
+// ======================================================================= скриншоты
 
-async function longShot(t) {
-  if (!t || !t.view) return;
-  const wc = t.view.webContents;
-  showBubble({ id: 'shot', icon: 'shot', text: 'Делаю снимок всей страницы…', progress: -1 });
+function shotsDir() {
+  const dir = path.join(app.getPath('pictures'), store.get('name') || 'BySS');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function shotFile() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stem = (store.get('name') || 'BySS').replace(/[^\p{L}\d _-]/gu, '') + '_' + d.getFullYear() + pad(d.getMonth() + 1)
+    + pad(d.getDate()) + '_' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+  let file = path.join(shotsDir(), stem + '.png');
+  for (let i = 2; fs.existsSync(file) && i < 100; i++) file = path.join(shotsDir(), stem + '_' + i + '.png');
+  return file;
+}
+
+function shotSaved(buf, note, copied) {
+  const file = shotFile();
+  fs.writeFileSync(file, buf);
+  if (copied) clipboard.writeImage(nativeImage.createFromBuffer(buf));
+  showBubble({
+    id: 'shot',
+    icon: 'shot',
+    text: copied ? 'Снимок сохранён и скопирован' : 'Снимок сохранён',
+    sub: 'Изображения → ' + path.basename(path.dirname(file)) + (note ? ' · ' + note : ''),
+    buttons: [
+      ...(copied ? [] : [{ id: 'copy', label: 'Копировать' }]),
+      { id: 'folder', label: 'Показать в папке' },
+      { id: 'open', label: 'Открыть', primary: true }
+    ],
+    timeout: 10000
+  }, (b) => {
+    if (b === 'open') shell.openPath(file);
+    if (b === 'folder') shell.showItemInFolder(file);
+    if (b === 'copy') {
+      clipboard.writeImage(nativeImage.createFromBuffer(buf));
+      toast('Снимок скопирован — вставьте его куда нужно (Ctrl+V)');
+    }
+  });
+}
+
+function shotError(e) {
+  showBubble({ id: 'shot', icon: 'shot', text: 'Не получилось сделать снимок', sub: String((e && e.message) || e).slice(0, 120), timeout: 5000 });
+}
+
+function shotTarget(t) {
+  if (!t || !t.view || !/^https?:/.test(t.url)) {
+    toast('Скриншот делается на открытом сайте');
+    return null;
+  }
+  return t.view.webContents;
+}
+
+/** Что сейчас видно на странице. */
+async function shotVisible(t) {
+  const wc = shotTarget(t);
+  if (!wc) return;
+  try {
+    const img = await wc.capturePage();
+    shotSaved(img.toPNG(), '');
+  } catch (e) {
+    shotError(e);
+  }
+}
+
+/** Кусок страницы в координатах документа (CSS-пиксели) — через DevTools, за пределами экрана тоже. */
+async function captureClip(wc, clip) {
   let attached = false;
   try {
     if (!wc.debugger.isAttached()) {
       wc.debugger.attach('1.3');
       attached = true;
     }
-    const m = await wc.debugger.sendCommand('Page.getLayoutMetrics');
-    const size = m.cssContentSize || m.contentSize;
-    const width = Math.ceil(size.width);
-    const height = Math.min(Math.ceil(size.height), 30000);
     const r = await wc.debugger.sendCommand('Page.captureScreenshot', {
       format: 'png',
       captureBeyondViewport: true,
-      clip: { x: 0, y: 0, width, height, scale: 1 }
+      clip: Object.assign({ scale: 1 }, clip)
     });
-    const dir = path.join(app.getPath('pictures'), store.get('name') || 'BySS');
-    fs.mkdirSync(dir, { recursive: true });
-    const d = new Date();
-    const pad = (n) => String(n).padStart(2, '0');
-    const name = (store.get('name') || 'BySS').replace(/[^\p{L}\d _-]/gu, '') + '_' + d.getFullYear() + pad(d.getMonth() + 1)
-      + pad(d.getDate()) + '_' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()) + '.png';
-    const file = path.join(dir, name);
-    fs.writeFileSync(file, Buffer.from(r.data, 'base64'));
-    showBubble({
-      id: 'shot',
-      icon: 'shot',
-      text: 'Снимок сохранён',
-      sub: 'Изображения → ' + path.basename(dir) + (height >= 30000 ? ' · страница очень длинная, снято 30 000 точек' : ''),
-      buttons: [{ id: 'folder', label: 'Показать в папке' }, { id: 'open', label: 'Открыть', primary: true }],
-      timeout: 9000
-    }, (b) => {
-      if (b === 'open') shell.openPath(file);
-      if (b === 'folder') shell.showItemInFolder(file);
-    });
-  } catch (e) {
-    showBubble({ id: 'shot', icon: 'shot', text: 'Не получилось сделать снимок', sub: String(e.message || e).slice(0, 120), timeout: 5000 });
+    return Buffer.from(r.data, 'base64');
   } finally {
     if (attached) {
       try {
@@ -1444,6 +1663,185 @@ async function longShot(t) {
       } catch (e) {
         // уже отключён
       }
+    }
+  }
+}
+
+/** Вся страница сверху донизу. */
+async function shotFull(t) {
+  const wc = shotTarget(t);
+  if (!wc) return;
+  showBubble({ id: 'shot', icon: 'shot', text: 'Делаю снимок всей страницы…', progress: -1 });
+  try {
+    let size;
+    let attached = false;
+    try {
+      if (!wc.debugger.isAttached()) {
+        wc.debugger.attach('1.3');
+        attached = true;
+      }
+      const m = await wc.debugger.sendCommand('Page.getLayoutMetrics');
+      size = m.cssContentSize || m.contentSize;
+    } finally {
+      if (attached) {
+        try {
+          wc.debugger.detach();
+        } catch (e) {
+          // уже отключён
+        }
+      }
+    }
+    const width = Math.ceil(size.width);
+    const height = Math.min(Math.ceil(size.height), 30000);
+    const buf = await captureClip(wc, { x: 0, y: 0, width, height });
+    shotSaved(buf, height >= 30000 ? 'страница очень длинная, снято 30 000 точек' : '');
+  } catch (e) {
+    shotError(e);
+  }
+}
+
+// Выделение области мышью прямо на странице. Можно тянуть за край экрана — страница
+// прокрутится сама (или крутите колёсико), так снимается и длинный кусок.
+const SELECT_JS = String.raw`(() => new Promise((done) => {
+  const d = document, de = d.documentElement;
+  const S = (el, st) => { Object.assign(el.style, st); return el; };
+  const mk = (tag, st, text) => { const e = d.createElement(tag); if (text) e.textContent = text; return S(e, st); };
+  const font = '13px "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif';
+  const W = () => Math.max(de.scrollWidth, d.body ? d.body.scrollWidth : 0, innerWidth);
+  const H = () => Math.max(de.scrollHeight, d.body ? d.body.scrollHeight : 0, innerHeight);
+  const root = mk('div', { position: 'absolute', left: '0', top: '0', width: W() + 'px', height: H() + 'px',
+    zIndex: '2147483647', cursor: 'crosshair', background: 'rgba(0,0,0,.38)', userSelect: 'none', margin: '0', padding: '0' });
+  const sel = mk('div', { position: 'absolute', display: 'none', border: '2px solid #fff', boxSizing: 'border-box',
+    boxShadow: '0 0 0 100000px rgba(0,0,0,.38)', pointerEvents: 'none', borderRadius: '2px' });
+  const size = mk('div', { position: 'absolute', display: 'none', font, fontSize: '12px', fontWeight: '600', color: '#000',
+    background: '#fff', borderRadius: '10px', padding: '3px 9px', pointerEvents: 'none', whiteSpace: 'nowrap' });
+  const hint = mk('div', { position: 'fixed', left: '50%', top: '14px', transform: 'translateX(-50%)', font, color: '#F2F2F7',
+    background: 'rgba(28,28,30,.96)', borderRadius: '16px', padding: '9px 16px', boxShadow: '0 6px 22px rgba(0,0,0,.45)',
+    zIndex: '2147483647', pointerEvents: 'none', textAlign: 'center', maxWidth: '86vw' },
+    'Выделите мышью нужную часть. Тяните за край окна или крутите колёсико — так можно снять длинный кусок. Enter — сохранить, Esc — отмена');
+  const bar = mk('div', { position: 'absolute', display: 'none', gap: '6px', padding: '6px', background: 'rgba(28,28,30,.97)',
+    borderRadius: '18px', boxShadow: '0 6px 22px rgba(0,0,0,.45)', zIndex: '2147483647' });
+  const btn = (label, primary) => {
+    const b = mk('button', { font, border: '0', borderRadius: '13px', padding: '7px 14px', cursor: 'default',
+      background: primary ? '#F2F2F7' : 'rgba(255,255,255,.14)', color: primary ? '#000' : '#F2F2F7', fontWeight: primary ? '600' : '400' }, label);
+    b.addEventListener('mousedown', (e) => e.stopPropagation());
+    bar.appendChild(b);
+    return b;
+  };
+  const bCancel = btn('Отмена'), bCopy = btn('Сохранить и копировать'), bSave = btn('Сохранить', true);
+  root.append(sel, size, bar);
+  de.appendChild(root);
+  de.appendChild(hint);
+  let a = null, b = null, drag = false, cx = 0, cy = 0, raf = 0;
+  const rect = () => {
+    if (!a || !b) return null;
+    const x = Math.max(0, Math.min(a.x, b.x)), y = Math.max(0, Math.min(a.y, b.y));
+    return { x, y, width: Math.min(W(), Math.max(a.x, b.x)) - x, height: Math.min(H(), Math.max(a.y, b.y)) - y };
+  };
+  const draw = () => {
+    const r = rect();
+    if (!r) return;
+    root.style.background = 'transparent';
+    S(sel, { display: 'block', left: r.x + 'px', top: r.y + 'px', width: r.width + 'px', height: r.height + 'px' });
+    size.textContent = Math.round(r.width) + ' × ' + Math.round(r.height);
+    S(size, { display: 'block', left: r.x + 'px', top: Math.max(0, r.y - 26) + 'px' });
+  };
+  const finish = (action) => {
+    cancelAnimationFrame(raf);
+    removeEventListener('keydown', key, true);
+    removeEventListener('scroll', onScroll, true);
+    removeEventListener('mousemove', move, true);
+    removeEventListener('mouseup', up, true);
+    root.remove();
+    hint.remove();
+    const r = rect();
+    done(action && r && r.width >= 4 && r.height >= 4 ? Object.assign(r, { action }) : null);
+  };
+  const showBar = () => {
+    const r = rect();
+    if (!r || r.width < 4 || r.height < 4) { bar.style.display = 'none'; return; }
+    S(bar, { display: 'flex' });
+    const bw = bar.offsetWidth, bh = bar.offsetHeight;
+    let x = r.x + r.width - bw, y = r.y + r.height + 8;
+    if (y + bh > scrollY + innerHeight - 4) y = Math.max(r.y + 8, scrollY + innerHeight - bh - 12);
+    S(bar, { left: Math.max(scrollX + 8, x) + 'px', top: y + 'px' });
+  };
+  const toPage = () => ({ x: cx + scrollX, y: cy + scrollY });
+  const tick = () => {
+    if (!drag) return;
+    const edge = 46;
+    let dy = 0;
+    if (cy > innerHeight - edge) dy = Math.ceil((cy - (innerHeight - edge)) / 2.2);
+    else if (cy < edge) dy = -Math.ceil((edge - cy) / 2.2);
+    if (dy) scrollBy(0, dy);
+    b = toPage();
+    draw();
+    raf = requestAnimationFrame(tick);
+  };
+  root.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    cx = e.clientX; cy = e.clientY;
+    a = toPage(); b = a; drag = true;
+    bar.style.display = 'none';
+    hint.style.display = 'none';
+    raf = requestAnimationFrame(tick);
+  });
+  const move = (e) => {
+    if (!drag) return;
+    cx = e.clientX; cy = e.clientY;
+    b = toPage();
+    draw();
+  };
+  const up = () => {
+    if (!drag) return;
+    drag = false;
+    cancelAnimationFrame(raf);
+    b = toPage();
+    draw();
+    showBar();
+  };
+  addEventListener('mousemove', move, true);
+  addEventListener('mouseup', up, true);
+  const onScroll = () => { if (drag) { b = toPage(); draw(); } };
+  addEventListener('scroll', onScroll, true);
+  const key = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(null); }
+    else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); finish('save'); }
+  };
+  addEventListener('keydown', key, true);
+  root.addEventListener('contextmenu', (e) => { e.preventDefault(); finish(null); });
+  bCancel.onclick = () => finish(null);
+  bSave.onclick = () => finish('save');
+  bCopy.onclick = () => finish('copy');
+}))()`;
+
+async function shotArea(t) {
+  const wc = shotTarget(t);
+  if (!wc || t.selecting) return;
+  t.selecting = true;
+  wc.focus();
+  let off = null;
+  const gone = new Promise((resolve) => {
+    off = () => resolve(null);
+    wc.once('did-start-navigation', off);
+    wc.once('destroyed', off);
+  });
+  try {
+    const r = await Promise.race([wc.executeJavaScriptInIsolatedWorld(1077, [{ code: SELECT_JS }], true), gone]);
+    if (!r || !r.width || !r.height) return;
+    await new Promise((res) => setTimeout(res, 80)); // рамка выделения успевает исчезнуть
+    const clip = { x: Math.floor(r.x), y: Math.floor(r.y), width: Math.ceil(r.width), height: Math.min(Math.ceil(r.height), 30000) };
+    showBubble({ id: 'shot', icon: 'shot', text: 'Сохраняю выделенное…', progress: -1 });
+    const buf = await captureClip(wc, clip);
+    shotSaved(buf, r.height > 30000 ? 'выделено очень много, снято 30 000 точек' : '', r.action === 'copy');
+  } catch (e) {
+    shotError(e);
+  } finally {
+    t.selecting = false;
+    if (off && !wc.isDestroyed()) {
+      wc.removeListener('did-start-navigation', off);
+      wc.removeListener('destroyed', off);
     }
   }
 }
@@ -1729,7 +2127,7 @@ function setupIpc() {
   page('settings', (e) => settingsForPage(tabByWc(e.sender.id)));
   page('set', (e, key, value) => {
     const allowed = ['name', 'showBrand', 'theme', 'wallpaper', 'engines', 'engine', 'cities', 'shortcuts', 'adblock',
-      'restoreTabs', 'allowSites', 'askedSites', 'translate'];
+      'restoreTabs', 'allowSites', 'askedSites', 'translate', 'currency'];
     if (!allowed.includes(key)) return false;
     store.set(key, value);
     if (key === 'theme') applyTheme();
@@ -1812,6 +2210,44 @@ function setupIpc() {
     return ok;
   });
   page('clear-data', () => clearAll());
+  // скачанные файлы
+  page('downloads', () => downloadsForPage());
+  page('dl-open', (e, id) => {
+    const d = findDownload(id);
+    if (d && fs.existsSync(d.file)) shell.openPath(d.file);
+  });
+  page('dl-folder', (e, id) => {
+    const d = findDownload(id);
+    if (d && fs.existsSync(d.file)) shell.showItemInFolder(d.file);
+    else shell.openPath(app.getPath('downloads'));
+  });
+  page('dl-dir', () => shell.openPath(app.getPath('downloads')));
+  page('dl-remove', (e, id) => removeDownload(id));
+  page('dl-clear', () => {
+    const keep = (d) => liveDownloads.has(d.id);
+    store.set('downloads', (store.get('downloads') || []).filter(keep));
+    for (let i = memDownloads.length - 1; i >= 0; i--) if (!keep(memDownloads[i])) memDownloads.splice(i, 1);
+    pushDownloads();
+  });
+  page('dl-cancel', (e, id) => {
+    const it = liveDownloads.get(id);
+    if (it) it.cancel();
+  });
+  page('dl-pause', (e, id) => {
+    const it = liveDownloads.get(id);
+    if (!it) return;
+    if (it.isPaused()) it.resume();
+    else it.pause();
+  });
+  page('dl-retry', (e, id) => {
+    const d = findDownload(id);
+    const t = tabByWc(e.sender.id);
+    if (d && d.url && t && t.view) {
+      removeDownload(id);
+      t.view.webContents.downloadURL(d.url);
+    }
+  });
+  page('dl-icon', (e, id) => downloadIcon(id));
   page('update', () => checkUpdates(true));
   page('open-settings', () => openSettings());
   page('reload-filters', async () => {
@@ -1822,6 +2258,7 @@ function setupIpc() {
 
 function settingsForPage(t) {
   const s = Object.assign({}, store.all());
+  delete s.downloads; // список загрузок — отдельно, только странице загрузок
   s.modeName = t && t.mode ? modeName(t.mode) : null;
   s.version = app.getVersion();
   s.filters = adblock ? adblock.size : 0;
@@ -1882,6 +2319,14 @@ app.whenReady().then(async () => {
     applyInstallOptions();
   } catch (e) {
     // не страшно — главная останется как была
+  }
+  // один раз: третья строка на главной становится конвертером валют (можно вернуть поиск в настройках)
+  if (!store.get('fxHome')) {
+    const e = (store.get('engines') || ['google', 'yandex', 'ddg']).slice(0, 3);
+    while (e.length < 3) e.push('ddg');
+    e[2] = 'currency';
+    store.set('engines', e);
+    store.set('fxHome', true);
   }
   nativeTheme.themeSource = theme();
   // на Mac без меню «Правка» не работают ⌘C / ⌘V — оставляем только его

@@ -42,8 +42,8 @@ body.light .srow { background: rgba(255,255,255,.92); }
 .tile { width: 60px; height: 60px; border-radius: 15px; overflow: hidden; background: #000; display: grid; place-items: center;
   transition: transform .15s; position: relative; }
 body.light .tile { background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
-.tile img { width: 100%; height: 100%; object-fit: cover; }
-.tile img.small { width: 60%; height: 60%; object-fit: contain; }
+.tile img { width: 100%; height: 100%; object-fit: contain; }
+.tile img.bleed { object-fit: cover; }
 .tile .letter { font-size: 26px; font-weight: 700; }
 .cell .name { margin-top: 7px; font-size: 12.5px; color: var(--text); max-width: 100%; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; padding: 0 4px; font-weight: 600; text-shadow: 0 1px 3px rgba(0,0,0,.4); }
@@ -51,3 +51,43 @@ body.light .cell .name { text-shadow: none; }
 #add { margin-top: 6px; width: 54px; height: 54px; border: 0; background: none; color: var(--text); padding: 13px; border-radius: 27px; }
 #add:active { transform: scale(.92); }
 #add svg { width: 100%; height: 100%; }
+
+/* конвертер валют — третья строка */
+.srow.fx { cursor: default; padding-right: 18px; }
+.srow.fx:hover { filter: brightness(1.12); }
+.srow.fx .badge { font-size: 17px; }
+.fxsum { flex: 1; min-width: 0; font-size: 15.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fxtag { color: var(--text2); font-size: 12.5px; flex: none; }
+.modal.fxm { width: min(460px, 94vw); position: relative; user-select: none; }
+.fxtop { display: flex; align-items: center; gap: 10px; }
+.fxamt { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 32px; font-weight: 300; user-select: text; padding: 2px 0; }
+.fxbase { border: 0; border-radius: 20px; background: var(--card2); padding: 9px 14px; font-weight: 600; font-size: 15px; flex: none; }
+.fxbase:hover { filter: brightness(1.12); }
+.fxbname { color: var(--text2); font-size: 12.5px; margin-top: 2px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.fxlist { max-height: 42vh; overflow: auto; margin: 6px -8px 0; }
+.fxwait { color: var(--text2); padding: 16px 8px; }
+.fxr { display: flex; align-items: center; gap: 12px; padding: 9px 8px; border-radius: 12px; }
+.fxr:hover { background: var(--card2); }
+.fxc { width: 34px; height: 34px; border-radius: 17px; background: var(--card2); display: grid; place-items: center; font-weight: 700; flex: none; }
+.fxr:hover .fxc { background: var(--bg); }
+.fxn { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fxn b { font-size: 14.5px; font-weight: 600; }
+.fxn small { color: var(--text2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fxv { font-size: 19px; font-weight: 600; flex: none; }
+.fxx { width: 26px; height: 26px; border: 0; background: none; color: var(--text2); border-radius: 8px; padding: 5px; visibility: hidden; flex: none; }
+.fxr:hover .fxx { visibility: visible; }
+.fxx:hover { background: rgba(127,127,127,.2); color: var(--text); }
+.fxx svg { width: 100%; height: 100%; }
+.fxadd { border: 0; background: none; font-weight: 600; padding: 12px 0 6px; font-size: 14.5px; }
+.fxadd:hover { opacity: .8; }
+.fxfoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.fxsrc { color: var(--text2); font-size: 11.5px; cursor: pointer; }
+.fxsrc:hover { text-decoration: underline; }
+.fxpick { position: absolute; left: 0; right: 0; top: 0; min-height: 100%; height: 470px; max-height: 86vh; background: var(--card);
+  border-radius: 24px; padding: 22px; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.fxpick .fxq { width: 100%; user-select: text; }
+.fxpl { flex: 1; overflow: auto; margin: 10px -8px 0; min-height: 0; }
+.fxpi { display: flex; gap: 12px; align-items: baseline; padding: 8px; border-radius: 10px; }
+.fxpi:hover { background: var(--card2); }
+.fxpi b { width: 44px; flex: none; }
+.fxpi span { color: var(--text2); }
