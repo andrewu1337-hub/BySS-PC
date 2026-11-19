@@ -45,3 +45,17 @@
     CopyFiles /SILENT /FILESONLY "$PLUGINSDIR\install-options.json" "$INSTDIR\resources"
   ${EndIf}
 !macroend
+
+; Старая версия не удалилась (сломанный деинсталлятор, антивирус, занятый файл) —
+; не останавливаемся с ошибкой «Не удалось удалить старые файлы», а ставим новую версию поверх.
+; Настройки и данные браузера при этом не трогаются.
+!macro customUnInstallCheck
+  ${If} $R0 != 0
+    DetailPrint "Старая версия не удалилась (код $R0) — устанавливаем поверх"
+  ${EndIf}
+  ClearErrors
+!macroend
+
+!macro customUnInstallCheckCurrentUser
+  !insertmacro customUnInstallCheck
+!macroend
