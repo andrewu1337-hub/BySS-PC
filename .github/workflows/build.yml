@@ -66,7 +66,13 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win --x64 --publish always 2>&1 | tee -a build.log; exit ${PIPESTATUS[0]}
+        run: |
+          npx electron-builder --win --x64 --publish never 2>&1 | tee -a build.log; test ${PIPESTATUS[0]} -eq 0 || exit 1
+          ls dist | tee -a build.log
+          files="dist/BySS-Setup.exe"
+          [ -f dist/BySS-Setup.exe.blockmap ] && files="$files dist/BySS-Setup.exe.blockmap"
+          [ -f dist/latest.yml ] && files="$files dist/latest.yml"
+          gh release create "v1.0.${{ github.run_number }}" $files --repo "${{ github.repository }}" --target "${{ needs.prepare.outputs.sha }}" --title "BySS 1.0.${{ github.run_number }}" --notes "BySS для Windows. Установщик: BySS-Setup.exe" --latest 2>&1 | tee -a build.log; exit ${PIPESTATUS[0]}
       - name: Журнал ошибок (если сборка упала)
         if: failure()
         shell: bash
