@@ -49,7 +49,7 @@ const closed = [];
 const isMac = process.platform === 'darwin';
 
 // значок: голова льва без фона, с тёмным контуром — видна и на светлой, и на тёмной панели задач
-const ICON = path.join(__dirname, 'assets', 'lion.png');
+const ICON = path.join(__dirname, 'assets', 'lion-big.png');
 
 const COLORS = {
   dark: { bg: '#000000', text: '#FFFFFF' },

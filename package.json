@@ -47,7 +47,7 @@
         }
       ],
       "artifactName": "BySS-Setup.${ext}",
-      "icon": "assets/lion.png"
+      "icon": "assets/lion-big.png"
     },
     "nsis": {
       "oneClick": false,
@@ -67,7 +67,7 @@
       "target": "dmg",
       "category": "public.app-category.productivity",
       "artifactName": "BySS-mac.${ext}",
-      "icon": "assets/lion.png"
+      "icon": "assets/lion-big.png"
     },
     "publish": [
       {
