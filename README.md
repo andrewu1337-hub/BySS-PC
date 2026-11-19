@@ -1,2 +1,13 @@
-# BySS-PC
-BySS for Windows - browser without ads and trackers
+# BySS для компьютера
+
+Браузер без рекламы и слежки — версия для Windows (тот же движок Chromium, что и в Chrome).
+
+**Скачать:** [BySS-Setup.exe](https://github.com/andrewu1337-hub/BySS-PC/releases/latest/download/BySS-Setup.exe)
+
+- блокировка рекламы и трекеров (EasyList, EasyPrivacy, RU AdList, Peter Lowe);
+- главная с погодой, тремя поисками и сайтами на чёрных плитках;
+- режимы BySS — вкладки без следов, можно несколько сразу;
+- перевод страниц, длинный скриншот, поиск по странице;
+- обновления прямо из меню ⋮ → «Обновить браузер».
+
+Windows может предупредить «Неизвестный издатель» — нажмите «Подробнее» → «Выполнить в любом случае».

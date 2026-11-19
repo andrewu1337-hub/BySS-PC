@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'">
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<div id="strip">
+  <div id="tabs"></div>
+  <button id="plus" class="ib" title="Новая вкладка (Ctrl+T)"></button>
+  <div id="drag"></div>
+</div>
+<div id="bar">
+  <button id="back" class="ib" title="Назад (Alt+←)"></button>
+  <button id="fwd" class="ib" title="Вперёд (Alt+→)"></button>
+  <button id="reload" class="ib" title="Обновить (F5)"></button>
+  <div id="pill">
+    <button id="shield" class="ib small" title="Реклама и трекеры"><span id="count"></span></button>
+    <input id="addr" spellcheck="false" autocomplete="off" placeholder="Поиск или адрес">
+  </div>
+  <button id="tr" class="ib" title="Перевести страницу"></button>
+  <button id="menu" class="ib" title="Меню"></button>
+</div>
+<div id="find" hidden>
+  <input id="fq" spellcheck="false" placeholder="Найти на странице">
+  <span id="fcount"></span>
+  <button id="fup" class="ib small" title="Предыдущее"></button>
+  <button id="fdown" class="ib small" title="Следующее"></button>
+  <button id="fclose" class="ib small" title="Закрыть (Esc)"></button>
+</div>
+<script src="icons.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>

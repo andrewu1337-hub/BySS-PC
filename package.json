@@ -1,0 +1,74 @@
+{
+  "name": "byss",
+  "productName": "BySS",
+  "version": "1.0.0",
+  "description": "BySS — браузер без рекламы и слежки",
+  "main": "main.js",
+  "author": "BySS",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "latest"
+  },
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest"
+  },
+  "build": {
+    "appId": "app.byss.desktop",
+    "productName": "BySS",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "adblock.js",
+      "store.js",
+      "preload-ui.js",
+      "preload-page.js",
+      "preload-bubble.js",
+      "ui/**",
+      "bubble/**",
+      "pages/**",
+      "assets/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "BySS-Setup.${ext}",
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "BySS",
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.productivity",
+      "artifactName": "BySS-mac.${ext}",
+      "icon": "assets/icon.png"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "andrewu1337-hub",
+        "repo": "BySS-PC",
+        "releaseType": "release"
+      }
+    ]
+  }
+}

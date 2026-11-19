@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; user-select: none;
+    font: 13px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+  #card { margin: 6px 8px 8px; padding: 12px 10px 10px 16px; border-radius: 20px; background: #1C1C1E; color: #F2F2F7;
+    box-shadow: 0 6px 22px rgba(0,0,0,.45); display: none; animation: up .22s ease-out; }
+  body.light #card { background: #FFFFFF; color: #111113; box-shadow: 0 6px 22px rgba(0,0,0,.18); }
+  @keyframes up { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+  #row { display: flex; align-items: center; gap: 12px; }
+  #ic { width: 20px; height: 20px; flex: none; }
+  #ic:empty { display: none; }
+  #ic svg { width: 20px; height: 20px; }
+  #txt { flex: 1; min-width: 0; }
+  #t { font-size: 14px; line-height: 1.3; }
+  #s { color: #8E8E93; font-size: 12px; margin-top: 2px; }
+  #s:empty { display: none; }
+  #x { width: 28px; height: 28px; border: 0; background: none; color: #8E8E93; border-radius: 8px; padding: 0; display: grid; place-items: center; }
+  #x:hover { background: rgba(127,127,127,.18); }
+  #x svg { width: 15px; height: 15px; }
+  #bar { height: 4px; border-radius: 2px; background: rgba(127,127,127,.25); margin: 10px 6px 2px 0; overflow: hidden; display: none; }
+  #fill { height: 100%; width: 0; background: currentColor; border-radius: 2px; transition: width .2s; }
+  #bar.ind #fill { width: 30%; animation: ind 1.1s ease-in-out infinite; }
+  @keyframes ind { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+  #btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+  #btns:empty { display: none; }
+  .b { border: 0; border-radius: 16px; padding: 7px 14px; font: 13px "Segoe UI", system-ui, sans-serif;
+    background: rgba(127,127,127,.18); color: inherit; }
+  .b.p { background: #F2F2F7; color: #000; font-weight: 600; }
+  body.light .b.p { background: #111113; color: #FFF; }
+  .b:hover { filter: brightness(1.12); }
+</style>
+</head>
+<body>
+<div id="card">
+  <div id="row">
+    <div id="ic"></div>
+    <div id="txt"><div id="t"></div><div id="s"></div></div>
+    <button id="x" title="Закрыть"></button>
+  </div>
+  <div id="bar"><div id="fill"></div></div>
+  <div id="btns"></div>
+</div>
+<script src="icons.js"></script>
+<script src="bubble.js"></script>
+</body>
+</html>
