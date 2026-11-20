@@ -1,35 +1,26 @@
 'use strict';
-// Страницы расширений (фон, всплывающее окно, настройки). В этой версии движка
-// contextBridge.executeInMainWorld молча ничего не делает, и библиотека расширений
-// не добавляет им chrome.tabs, chrome.browserAction и остальное — расширения падают
-// при запуске (так было с uBlock Origin). Подменяем этот вызов на webFrame.executeJavaScript:
-// библиотека и сама так делает, когда executeInMainWorld нет.
-// Этот preload должен быть зарегистрирован раньше preload библиотеки.
-const { contextBridge, webFrame } = require('electron');
+// Страницы расширений (фон, всплывающее окно, настройки). Библиотека расширений добавляет им
+// chrome.tabs, chrome.browserAction и остальное через contextBridge.executeInMainWorld, а в этой
+// версии движка этот вызов на страницах расширений молча не срабатывает — и расширения падают
+// при запуске (так было с uBlock Origin). Здесь тот же код библиотеки ставится через
+// webFrame.executeJavaScript. Если библиотека всё же успела сама — повтор тихо ничего не делает.
+// Этот preload регистрируется после preload библиотеки.
+const { ipcRenderer, webFrame } = require('electron');
 
 if (typeof location !== 'undefined' && location.protocol === 'chrome-extension:') {
-  const viaWebFrame = (opts) => {
-    const fn = opts && opts.func;
-    if (typeof fn !== 'function') return undefined;
-    const args = JSON.stringify((opts && opts.args) || []);
-    const p = webFrame.executeJavaScript('(' + String(fn) + ').apply(null, ' + args + ');');
-    if (p && p.catch) p.catch((e) => console.error('BySS: executeInMainWorld', e));
-    return undefined;
-  };
+  let src = null;
   try {
-    contextBridge.executeInMainWorld = viaWebFrame;
+    src = ipcRenderer.sendSync('byss:crx-main');
   } catch (e) {
-    // ignore
+    src = null;
   }
-  if (contextBridge.executeInMainWorld !== viaWebFrame) {
+  if (typeof src === 'string' && src) {
+    const code = 'try{(' + src + ')()}catch(e){if(!(e instanceof ReferenceError))console.error("BySS: расширения", e)}';
     try {
-      Object.defineProperty(contextBridge, 'executeInMainWorld', { value: viaWebFrame, configurable: true, writable: true });
+      const p = webFrame.executeJavaScript(code);
+      if (p && p.catch) p.catch((e) => console.error('BySS: расширения', e));
     } catch (e) {
-      try {
-        delete contextBridge.executeInMainWorld; // тогда библиотека сама возьмёт webFrame
-      } catch (err) {
-        // ignore
-      }
+      console.error('BySS: расширения', e);
     }
   }
 }

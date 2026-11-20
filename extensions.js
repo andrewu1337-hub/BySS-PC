@@ -7,7 +7,7 @@
 // (движок отдаёт запросы только одному блокировщику).
 const fs = require('fs');
 const path = require('path');
-const { app, net, dialog } = require('electron');
+const { app, net, dialog, ipcMain } = require('electron');
 
 const UBO_API = 'https://api.github.com/repos/gorhill/uBlock/releases/latest';
 const UBO_EVERY = 24 * 3600 * 1000; // проверять новую версию uBlock Origin раз в сутки
@@ -241,6 +241,51 @@ async function loadUbo() {
   }
 }
 
+// ------------------------------------------------------------------ код библиотеки для страниц расширений
+
+let crxMain;
+
+/**
+ * Достаёт из preload библиотеки функцию, которая добавляет страницам расширений chrome.tabs,
+ * chrome.browserAction и т. п. Preload выполняется понарошку, с заглушками вместо electron,
+ * и функция перехватывается в момент, когда библиотека передаёт её в executeInMainWorld.
+ */
+function crxMainSource() {
+  if (crxMain !== undefined) return crxMain;
+  crxMain = null;
+  try {
+    const vm = require('vm');
+    const code = fs.readFileSync(require.resolve('electron-chrome-extensions/preload'), 'utf8');
+    let func = null;
+    const noop = () => {};
+    const fakeElectron = {
+      contextBridge: {
+        exposeInMainWorld: noop,
+        executeInMainWorld: (o) => {
+          if (!func && o && typeof o.func === 'function') func = o.func;
+        }
+      },
+      ipcRenderer: new Proxy({}, { get: () => noop }),
+      webFrame: { executeJavaScript: () => Promise.resolve() }
+    };
+    vm.runInNewContext(code, {
+      require: (m) => (m === 'electron' ? fakeElectron : {}),
+      process: { type: 'renderer', contextIsolated: true, env: {} },
+      location: { href: 'chrome-extension://byss/' },
+      console: { log: noop, warn: noop, error: noop, debug: noop, info: noop },
+      setTimeout,
+      clearTimeout,
+      queueMicrotask
+    }, { timeout: 2000 });
+    const src = func ? String(func) : '';
+    crxMain = /chrome/.test(src) ? src : null;
+  } catch (e) {
+    console.error('extensions main-world source', e);
+    crxMain = null;
+  }
+  return crxMain;
+}
+
 // ------------------------------------------------------------------ запуск
 
 /**
@@ -251,6 +296,16 @@ async function init(session, hooks) {
   ses = session;
   if (state !== 'off') return;
   state = 'loading';
+  // ответ — одним присваиванием: Electron отправляет его сразу
+  ipcMain.on('byss:crx-main', (e) => {
+    let src = null;
+    try {
+      if (e.sender && e.sender.session === ses) src = crxMainSource();
+    } catch (err) {
+      src = null;
+    }
+    e.returnValue = src;
+  });
   try {
     // после app.ready: иначе библиотека перепишет права схемы byss://
     ECE = require('electron-chrome-extensions');
@@ -262,12 +317,6 @@ async function init(session, hooks) {
     return;
   }
   try {
-    // до библиотеки: её preload для страниц расширений иначе не срабатывает (см. preload-crx-fix.js)
-    try {
-      ses.registerPreloadScript({ id: 'byss-crx-fix', type: 'frame', filePath: path.join(__dirname, 'preload-crx-fix.js') });
-    } catch (e) {
-      console.error('extensions preload fix', e);
-    }
     ext = new ECE.ElectronChromeExtensions({
       session: ses,
       createTab: async (details) => {
@@ -297,6 +346,12 @@ async function init(session, hooks) {
       },
       removeWindow: () => {}
     });
+    // после preload библиотеки: её код для страниц расширений ставим сами (см. preload-crx-fix.js)
+    try {
+      ses.registerPreloadScript({ id: 'byss-crx-fix', type: 'frame', filePath: path.join(__dirname, 'preload-crx-fix.js') });
+    } catch (e) {
+      console.error('extensions preload fix', e);
+    }
     // значки расширений в верхней панели (она в обычной сессии приложения)
     ECE.ElectronChromeExtensions.handleCRXProtocol(require('electron').session.defaultSession);
 
