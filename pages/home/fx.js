@@ -6,7 +6,7 @@
 const FX_API = 'https://open.er-api.com/v6/latest/EUR';
 const FX_SOURCE = 'https://www.exchangerate-api.com';
 const FX_FRESH = 6 * 3600 * 1000;
-const FX_DEFAULT = ['MDL', 'USD', 'RON', 'UAH', 'CZK', 'GBP'];
+const FX_DEFAULT = ['USD', 'MDL', 'RON', 'UAH', 'CZK', 'GBP'];
 const FX_POPULAR = ['EUR', 'USD', 'MDL', 'RON', 'UAH', 'RUB', 'GBP', 'CZK', 'PLN', 'CHF', 'TRY', 'BGN', 'HUF', 'BYN', 'KZT',
   'GEL', 'AMD', 'AZN', 'SEK', 'NOK', 'DKK', 'RSD', 'ILS', 'AED', 'CNY', 'JPY', 'CAD', 'AUD'];
 let fxRates = null;
@@ -74,11 +74,32 @@ function fxFmt(v) {
   return new Intl.NumberFormat('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d }).format(v);
 }
 
-function fxSummary() {
-  if (!fxRates) return '';
+/** Вторая валюта строки на главной — первая в списке (кроме основной). */
+function fxTo(c) {
+  return c.list.find((x) => x !== c.base) || null;
+}
+
+/** Строка на главной — только две валюты: «1 EUR → 1,05 USD». */
+function fxSummary(box) {
   const c = fxCfg();
-  const parts = c.list.filter((x) => x !== c.base).slice(0, 2).map((x) => fxFmt(fxConv(1, c.base, x)) + ' ' + x);
-  return parts.length ? '1 ' + c.base + ' = ' + parts.join('  ·  ') : '';
+  const to = fxTo(c);
+  box.innerHTML = '';
+  if (!fxRates || !to) {
+    box.textContent = 'Конвертер валют';
+    return false;
+  }
+  const from = document.createElement('span');
+  from.className = 'fxfrom';
+  from.textContent = '1 ' + c.base;
+  const ar = document.createElement('span');
+  ar.className = 'fxar';
+  ar.textContent = '→';
+  const res = document.createElement('b');
+  res.className = 'fxto';
+  res.textContent = fxFmt(fxConv(1, c.base, to)) + ' ' + to;
+  box.append(from, ar, res);
+  box.parentNode && (box.parentNode.title = 'Конвертер валют: ' + fxName(c.base) + ' → ' + fxName(to));
+  return true;
 }
 
 function fxRow() {
@@ -91,16 +112,13 @@ function fxRow() {
   badge.textContent = fxSym(c.base);
   const sum = document.createElement('div');
   sum.className = 'fxsum';
-  sum.textContent = fxSummary() || 'Конвертер валют';
   const tag = document.createElement('div');
   tag.className = 'fxtag';
   tag.textContent = 'Конвертер валют';
   row.append(badge, sum, tag);
+  fxSummary(sum);
   row.onclick = () => openFx();
-  fxLoad(false).then(() => {
-    const t = fxSummary();
-    if (t) sum.textContent = t;
-  });
+  fxLoad(false).then(() => fxSummary(sum));
   return row;
 }
 
@@ -131,12 +149,13 @@ function openFx() {
 
   m.innerHTML = '<h3>Конвертер валют</h3>'
     + '<div class="fxtop"><input class="fxamt" inputmode="decimal" spellcheck="false"><button class="fxbase"></button></div>'
-    + '<div class="fxbname"></div><div class="fxlist"></div>'
+    + '<div class="fxbname"></div><button class="fxhome"></button><div class="fxlist"></div>'
     + '<button class="fxadd">+  Добавить валюту</button>'
     + '<div class="fxfoot"><span class="fxsrc"></span><button class="btn p fxok">Готово</button></div>';
   const amount = m.querySelector('.fxamt');
   const baseBtn = m.querySelector('.fxbase');
   const baseName = m.querySelector('.fxbname');
+  const homePair = m.querySelector('.fxhome');
   const list = m.querySelector('.fxlist');
   const src = m.querySelector('.fxsrc');
   amount.value = fxAmountText(cfg.amount);
@@ -144,6 +163,9 @@ function openFx() {
   const render = () => {
     baseBtn.textContent = fxSym(cfg.base) + '  ' + cfg.base + '  ▾';
     baseName.textContent = fxName(cfg.base);
+    const to = fxTo(cfg);
+    homePair.innerHTML = '<span>На главной:</span> <b></b> <i>изменить</i>';
+    homePair.querySelector('b').textContent = cfg.base + ' → ' + (to || '—');
     list.innerHTML = '';
     if (!fxRates) {
       const w = document.createElement('div');
@@ -160,7 +182,7 @@ function openFx() {
       r.innerHTML = '<div class="fxc"></div><div class="fxn"><b></b><small></small></div><div class="fxv"></div><button class="fxx" title="Убрать из списка"></button>';
       r.querySelector('.fxc').textContent = fxSym(code);
       r.querySelector('b').textContent = code;
-      r.querySelector('small').textContent = fxName(code);
+      r.querySelector('small').textContent = fxName(code) + (code === to ? '  ·  на главной' : '');
       r.querySelector('.fxv').textContent = fxFmt(fxConv(a, cfg.base, code));
       r.querySelector('.fxv').dataset.code = code;
       const x = r.querySelector('.fxx');
@@ -196,6 +218,11 @@ function openFx() {
     if (i >= 0) cfg.list[i] = cfg.base;
     else if (!cfg.list.includes(cfg.base)) cfg.list.unshift(cfg.base);
     cfg.base = code;
+    render();
+  });
+  homePair.onclick = () => fxPick(m, 'Вторая валюта на главной', (code) => {
+    if (code === cfg.base) return;
+    cfg.list = [code].concat(cfg.list.filter((c) => c !== code)); // первая в списке — та, что на главной
     render();
   });
   m.querySelector('.fxadd').onclick = () => fxPick(m, 'Добавить валюту', (code) => {

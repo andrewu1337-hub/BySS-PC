@@ -10,6 +10,9 @@ $('fwd').innerHTML = I.forward;
 $('reload').innerHTML = I.reload;
 $('tr').innerHTML = I.translate;
 $('menu').innerHTML = I.menu;
+$('pfind').innerHTML = I.search;
+$('pcopy').innerHTML = I.link;
+$('pprint').innerHTML = I.print;
 $('fup').innerHTML = '<svg viewBox="0 0 24 24"><path d="M6,15 L12,9 L18,15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 $('fdown').innerHTML = '<svg viewBox="0 0 24 24"><path d="M6,9 L12,15 L18,9" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 $('fclose').innerHTML = I.close;
@@ -38,6 +41,14 @@ $('reload').onclick = () => api.send('nav:reload');
 $('menu').onclick = () => api.send('ui:menu');
 $('shield').onclick = () => api.send('ui:shield');
 $('tr').onclick = () => api.send('ui:translate');
+$('pfind').onclick = () => api.send('ui:find');
+$('pcopy').onclick = () => {
+  api.send('ui:copy');
+  const b = $('pcopy');
+  b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5,12.5 L10,17.5 L19,7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  setTimeout(() => { b.innerHTML = I.link; }, 1200);
+};
+$('pprint').onclick = () => api.send('ui:print');
 $('eng').onclick = (e) => {
   const r = e.currentTarget.getBoundingClientRect();
   api.send('ui:engine', Math.round(r.left), Math.round(r.bottom + 4));
@@ -64,7 +75,7 @@ addr.addEventListener('mouseup', (e) => {
   }
   selectOnUp = false;
 });
-addr.addEventListener('input', () => { dirty = true; });
+addr.addEventListener('input', () => { dirty = true; document.body.classList.add('typing'); });
 addr.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     const v = addr.value.trim();
@@ -80,6 +91,7 @@ addr.addEventListener('keydown', (e) => {
 });
 addr.addEventListener('blur', () => {
   dirty = false;
+  document.body.classList.remove('typing');
   setTimeout(() => showUrl(true), 0);
 });
 
@@ -258,6 +270,8 @@ function render() {
   sh.classList.toggle('on', on);
   sh.title = on ? 'Реклама и трекеры блокируются' + (n.blocked ? ' · заблокировано: ' + n.blocked : '') : 'Блокировка выключена для этого сайта';
   $('tr').style.display = n.site ? '' : 'none';
+  for (const k of ['pfind', 'pcopy', 'pprint']) $(k).style.display = n.site ? '' : 'none';
+  $('pfind').classList.toggle('on', !!s.findOpen);
   $('tr').classList.toggle('on', n.translated);
   $('tr').title = n.translated ? 'Показать оригинал' : 'Перевести страницу';
   addr.placeholder = (n.mode ? n.modeName + ' · ' : '') + 'Поиск в ' + e.where + ' или адрес';

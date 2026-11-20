@@ -40,6 +40,7 @@ let adblock;
 let win;
 let ui;
 let bubble;
+let menuView;      // меню «⋮» — своё, чтобы пункты можно было раскрасить и сгруппировать
 let tabs = [];
 let activeId = null;
 let nextId = 1;
@@ -281,10 +282,22 @@ function createWindow() {
     bubblePending = null;
   });
 
+  menuView = new WebContentsView({
+    webPreferences: { preload: path.join(__dirname, 'preload-menu.js'), contextIsolation: true, sandbox: true }
+  });
+  menuView.setBackgroundColor('#00000000');
+  menuView.webContents.loadFile(path.join(__dirname, 'menu', 'menu.html'));
+  menuView.webContents.on('did-finish-load', () => {
+    menuReady = true;
+    if (menuPending) menuView.webContents.send('show', menuPending);
+    menuPending = null;
+  });
+
   win.on('resize', () => {
     layout();
     rememberBounds();
   });
+  win.on('blur', () => hideMenu());
   win.on('move', rememberBounds);
   win.on('maximize', layout);
   win.on('unmaximize', layout);
@@ -323,6 +336,7 @@ function layout() {
     if (t && t.view) t.view.setBounds({ x: 0, y: top(), width: w, height: Math.max(0, h - top()) });
   }
   layoutBubble();
+  if (menuShown) menuView.setBounds({ x: 0, y: 0, width: w, height: h });
 }
 
 // ======================================================================= вкладки
@@ -407,6 +421,7 @@ function activate(id) {
       // уже убран
     }
   }
+  hideMenu();
   activeId = id;
   ensureView(t);
   win.contentView.addChildView(t.view, 1);
@@ -822,51 +837,107 @@ function shotMenu(t) {
   };
 }
 
+// Своё меню вместо системного: пункты по группам, «Удалить все данные» — красным,
+// ниже другим цветом «Обновить браузер» и «Режим BySS». Ссылка, поиск и печать — в адресной строке.
+let menuShown = false;
+let menuReady = false;
+let menuPending = null;
+let menuActions = new Map();
+
+const ACC = (k) => (isMac ? '⌘' : 'Ctrl+') + k;
+
 function mainMenu() {
   const t = activeTab();
   const site = t && /^https?:/.test(t.url);
   const modes = store.get('modes') || [];
+  const acts = new Map();
+  let seq = 0;
+  const act = (fn) => {
+    const k = 'a' + (++seq);
+    acts.set(k, fn);
+    return k;
+  };
   const items = [];
-  items.push({ label: 'Новая вкладка', accelerator: 'CmdOrCtrl+T', click: () => newTab(HOME) });
+  if (site) {
+    const base = baseDomain(hostOf(t.url));
+    const on = siteBlocked(t);
+    const n = t.blocked || 0;
+    items.push({
+      type: 'switch',
+      id: act(() => toggleSiteBlock(t)),
+      icon: on ? 'shield' : 'shield_off',
+      label: 'Блокировать рекламу и слежку',
+      sub: !store.get('adblock') ? 'выключено везде · нажмите, чтобы включить'
+        : base + (on ? (n ? ' · убрано ' + n : '') : ' · разрешено'),
+      on
+    });
+    items.push({ type: 'sep' });
+    items.push({
+      type: 'group',
+      icon: 'screenshot',
+      label: 'Скриншот',
+      children: [
+        { id: act(() => shotVisible(t)), label: 'Видимая часть' },
+        { id: act(() => shotFull(t)), label: 'Вся страница' },
+        { id: act(() => shotArea(t)), label: 'Выделить область…', accel: ACC('Shift+S') }
+      ]
+    });
+    items.push({ id: act(() => addToHome(t)), icon: 'home', label: 'Добавить на главную', accel: ACC('D') });
+  }
+  items.push({ id: act(() => openPage(DOWNLOADS)), icon: 'download', label: 'Скачанные файлы', accel: ACC('J') });
+  items.push({ id: act(() => openSettings()), icon: 'settings', label: 'Доп. настройки' });
   items.push({
-    label: 'Новая вкладка BySS',
-    submenu: [
-      ...modes.map((m) => ({ label: m.name, click: () => newModeTab(m.id) })),
-      ...(modes.length ? [{ type: 'separator' }] : []),
-      { label: 'Новый режим BySS', click: () => newModeTab(newMode()) }
+    id: act(() => setTheme(theme() === 'dark' ? 'light' : 'dark')),
+    icon: 'theme',
+    label: theme() === 'dark' ? 'Светлая тема' : 'Тёмная тема'
+  });
+  items.push({ type: 'sep' });
+  items.push({ id: act(clearAll), icon: 'trash', label: 'Удалить все данные', color: 'danger' });
+  items.push({ id: act(() => checkUpdates(true)), icon: 'reload', label: 'Обновить браузер', color: 'accent' });
+  items.push({
+    type: 'group',
+    icon: 'incognito',
+    label: 'Режим BySS',
+    color: 'accent',
+    children: [
+      ...modes.map((m) => ({
+        id: act(() => newModeTab(m.id)),
+        icon: 'shield',
+        label: m.name,
+        trailing: { id: act(() => deleteMode(m.id)), icon: 'trash', title: 'Удалить «' + m.name + '»' }
+      })),
+      { id: act(() => newModeTab(newMode())), icon: 'plus', label: 'Новый режим BySS' }
     ]
   });
-  if (site) {
-    items.push({ label: t.translated ? 'Показать оригинал' : 'Перевести страницу', click: () => translate(t) });
-    items.push(shotMenu(t));
-    items.push({ label: 'Добавить на главную', accelerator: 'CmdOrCtrl+D', click: () => addToHome(t) });
-    items.push({ label: 'Скопировать ссылку', click: () => { clipboard.writeText(t.url); toast('Ссылка скопирована'); } });
+  showMenu(items, acts);
+}
+
+function showMenu(items, acts) {
+  if (!win || !menuView) return;
+  menuActions = acts;
+  const msg = { items, light: theme() === 'light', top: top() - 4 };
+  if (menuReady) menuView.webContents.send('show', msg);
+  else menuPending = msg;
+  if (!menuShown) {
+    win.contentView.addChildView(menuView);
+    menuShown = true;
   }
-  items.push({ label: 'Найти на странице', accelerator: 'CmdOrCtrl+F', click: openFind });
-  items.push({ label: 'Печать', accelerator: 'CmdOrCtrl+P', click: () => t && t.view && t.view.webContents.print() });
-  items.push({ label: 'Скачанные файлы', accelerator: 'CmdOrCtrl+J', click: () => openPage(DOWNLOADS) });
-  items.push({ label: 'Обновить браузер', click: () => checkUpdates(true) });
-  items.push({ label: 'Доп. настройки', click: () => openSettings() });
-  items.push({ label: theme() === 'dark' ? 'Светлая тема' : 'Тёмная тема', click: () => setTheme(theme() === 'dark' ? 'light' : 'dark') });
-  if (modes.length) {
-    items.push({ label: 'Удалить режим BySS', submenu: modes.map((m) => ({ label: m.name, click: () => deleteMode(m.id) })) });
+  const [w, h] = win.getContentSize();
+  menuView.setBounds({ x: 0, y: 0, width: w, height: h });
+  menuView.webContents.focus();
+}
+
+function hideMenu() {
+  if (!menuShown) return;
+  menuShown = false;
+  menuActions = new Map();
+  try {
+    win.contentView.removeChildView(menuView);
+  } catch (e) {
+    // уже убрано
   }
-  // как на телефоне: сначала пункты с длинным текстом, «Удалить все данные» — в самом конце
-  items.sort((a, b) => b.label.length - a.label.length);
-  if (site) {
-    // сверху — переключатель рекламы и слежки для этого сайта (как в меню на телефоне)
-    const n = t.blocked || 0;
-    items.unshift({ type: 'separator' });
-    items.unshift({
-      label: 'Блокировать рекламу и слежку' + (siteBlocked(t) && n ? '  ·  убрано ' + n : ''),
-      type: 'checkbox',
-      checked: siteBlocked(t),
-      click: () => toggleSiteBlock(t)
-    });
-  }
-  items.push({ type: 'separator' });
-  items.push({ label: 'Удалить все данные', click: clearAll });
-  Menu.buildFromTemplate(items).popup({ window: win });
+  const t = activeTab();
+  if (t && t.view && !t.view.webContents.isDestroyed()) t.view.webContents.focus();
 }
 
 const ENGINE_NAMES = { google: 'Google', yandex: 'Яндекс', ddg: 'DuckDuckGo', bing: 'Bing' };
@@ -2104,7 +2175,30 @@ function setupIpc() {
     const t = activeTab();
     if (fromUi(e) && t) navigate(t, HOME);
   });
-  ipcMain.on('ui:menu', (e) => fromUi(e) && mainMenu());
+  ipcMain.on('ui:menu', (e) => fromUi(e) && (menuShown ? hideMenu() : mainMenu()));
+  ipcMain.on('menu:pick', (e, id) => {
+    if (!menuView || e.sender !== menuView.webContents) return;
+    const fn = menuActions.get(id);
+    hideMenu();
+    if (fn) fn();
+  });
+  ipcMain.on('menu:close', (e) => {
+    if (menuView && e.sender === menuView.webContents) hideMenu();
+  });
+  // адресная строка: поиск по странице, ссылка и печать
+  ipcMain.on('ui:find', (e) => fromUi(e) && (findOpen ? closeFind() : openFind()));
+  ipcMain.on('ui:copy', (e) => {
+    if (!fromUi(e)) return;
+    const t = activeTab();
+    if (!t || !/^https?:/.test(t.url)) return;
+    clipboard.writeText(t.url);
+    toast('Ссылка скопирована');
+  });
+  ipcMain.on('ui:print', (e) => {
+    if (!fromUi(e)) return;
+    const t = activeTab();
+    if (t && t.view) t.view.webContents.print();
+  });
   ipcMain.on('ui:shield', (e) => fromUi(e) && shieldMenu());
   ipcMain.on('ui:translate', (e) => fromUi(e) && translate(activeTab()));
   ipcMain.on('ui:engine', (e, x, y) => fromUi(e) && engineMenu(x, y));

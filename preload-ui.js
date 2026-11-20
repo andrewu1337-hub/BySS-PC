@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const SEND = ['ui:ready', 'tab:new', 'tab:activate', 'tab:close', 'tab:menu', 'tab:move', 'nav:go', 'nav:back',
   'nav:forward', 'nav:reload', 'nav:home', 'ui:menu', 'ui:shield', 'ui:translate', 'ui:engine', 'ui:focus-page',
+  'ui:find', 'ui:copy', 'ui:print',
   'find:query', 'find:close'];
 const ON = ['state', 'focus-address', 'find-open', 'find-result'];
 

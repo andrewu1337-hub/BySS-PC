@@ -67,11 +67,16 @@ body.mac #strip { padding: 0 8px 0 80px; }
 
 #bar { height: 46px; display: flex; align-items: center; gap: 2px; padding: 0 8px 6px; }
 #pill { flex: 1; height: 38px; background: var(--pill); border-radius: 19px; display: flex; align-items: center;
-  padding: 0 10px 0 6px; gap: 4px; min-width: 0; }
+  padding: 0 6px 0 6px; gap: 2px; min-width: 0; }
 body.inmode #pill { background: var(--mode); }
 #addr { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; color: var(--text);
   font: 14px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; user-select: text; }
 #addr::placeholder { color: var(--text2); }
+#pill .pa { color: var(--text2); }
+#pill .pa:hover { color: var(--text); }
+#pill .pa.on { color: var(--text); background: rgba(127,127,127,.16); }
+#pill .pa svg { width: 16px; height: 16px; }
+body.typing #pill .pa { display: none !important; }
 #eng { width: 30px; }
 #engG { width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; font-weight: 700; font-size: 12px;
   background: rgba(127,127,127,.22); color: var(--text); line-height: 1; }

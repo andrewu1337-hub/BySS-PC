@@ -30,10 +30,12 @@
       "preload-ui.js",
       "preload-page.js",
       "preload-bubble.js",
+      "preload-menu.js",
       "translate-page.js",
       "yt.js",
       "ui/**",
       "bubble/**",
+      "menu/**",
       "pages/**",
       "assets/**",
       "package.json"
