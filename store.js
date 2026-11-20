@@ -26,7 +26,9 @@ const DEFAULTS = {
   installStamp: '',           // какие настройки установщика уже применены
   modes: [],                  // режимы BySS: [{ id, name }]
   autoscroll: { mode: 'smooth', level: 4, interval: 5, step: 75, ticks: 1 }, // автоскролл: плавно, шагами или колесом
-  downloads: []               // скачанные файлы (без режимов BySS)
+  downloads: [],              // скачанные файлы (без режимов BySS)
+  extOff: [],                 // выключенные расширения (id)
+  ubo: { on: false, version: '', checked: 0, pending: '' } // uBlock Origin с GitHub
 };
 
 // сайты на главной: обычные и «мои» (их можно не ставить — галочка в установщике)

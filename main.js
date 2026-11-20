@@ -11,6 +11,7 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 const { Store, MY_SITES } = require('./store');
 const { AdBlock, baseDomain, hostOf } = require('./adblock');
+const EXT = require('./extensions');
 
 let autoUpdater = null;
 try {
@@ -30,6 +31,7 @@ if (!app.requestSingleInstanceLock()) {
 const HOME = 'byss://home/';
 const SETTINGS = 'byss://settings/';
 const DOWNLOADS = 'byss://downloads/';
+const EXTENSIONS = 'byss://extensions/';
 const MAX_TABS = 50;
 const STRIP = 40;   // ряд вкладок
 const BAR = 46;     // адресная строка
@@ -115,6 +117,39 @@ const PERM_NAMES = {
   'top-level-storage-access': 'доступ к своим данным на других сайтах'
 };
 
+const NET_FILTER = { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] };
+
+/** Встроенная блокировка запросов. */
+function netFilter(d, cb) {
+  try {
+    if (!store.get('adblock') || d.resourceType === 'mainFrame') return cb({});
+    const t = tabByWc(d.webContentsId);
+    const pageHost = t ? hostOf(t.url) : hostOf(d.referrer || '');
+    if (pageHost && store.get('allowSites')[baseDomain(pageHost)]) return cb({});
+    const host = hostOf(d.url);
+    if (adblock.shouldBlock(host, pageHost)) {
+      if (t) {
+        t.blocked++;
+        if (t.id === activeId) sendState();
+      }
+      return cb({ cancel: true });
+    }
+  } catch (e) {
+    // на всякий случай пропускаем запрос
+  }
+  cb({});
+}
+
+/** Включён uBlock Origin — запросы отдаём ему (движок не даёт работать двум блокировщикам сразу). */
+function applyNet(ses) {
+  try {
+    if (EXT.uboOwnsNetwork(ses)) ses.webRequest.onBeforeRequest(null);
+    else ses.webRequest.onBeforeRequest(NET_FILTER, netFilter);
+  } catch (e) {
+    // ignore
+  }
+}
+
 function prepare(ses, incognito) {
   if (prepared.has(ses)) return;
   prepared.add(ses);
@@ -125,25 +160,7 @@ function prepare(ses, incognito) {
     // проверка орфографии недоступна
   }
 
-  ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (d, cb) => {
-    try {
-      if (!store.get('adblock') || d.resourceType === 'mainFrame') return cb({});
-      const t = tabByWc(d.webContentsId);
-      const pageHost = t ? hostOf(t.url) : hostOf(d.referrer || '');
-      if (pageHost && store.get('allowSites')[baseDomain(pageHost)]) return cb({});
-      const host = hostOf(d.url);
-      if (adblock.shouldBlock(host, pageHost)) {
-        if (t) {
-          t.blocked++;
-          if (t.id === activeId) sendState();
-        }
-        return cb({ cancel: true });
-      }
-    } catch (e) {
-      // на всякий случай пропускаем запрос
-    }
-    cb({});
-  });
+  applyNet(ses);
 
   ses.on('will-download', (e, item) => download(item, incognito));
 
@@ -407,6 +424,7 @@ function ensureView(t) {
   view.setBackgroundColor(COLORS[theme()].bg);
   t.view = view;
   wire(t, view.webContents);
+  if (!t.mode) EXT.addTab(view.webContents);
   view.webContents.loadURL(t.url).catch(() => {});
   return view;
 }
@@ -425,6 +443,7 @@ function activate(id) {
   hideMenu();
   activeId = id;
   ensureView(t);
+  if (!t.mode) EXT.selectTab(t.view.webContents);
   win.contentView.addChildView(t.view, 1);
   if (bubbleShown) {
     win.contentView.removeChildView(bubble);
@@ -540,6 +559,7 @@ function wire(t, wc) {
     const same = e && e.isSameDocument;
     if (isMain && !same) {
       t.blocked = 0;
+      t.ytOk = null;
       if (t.autoscroll) {
         t.autoscroll = false; // новая страница — автоскролл начинается заново только по команде
         clearInterval(t.asTimer);
@@ -666,6 +686,7 @@ function snapshot() {
       canFwd: wc ? canGo(wc, false) : false,
       loading: t ? t.loading : false,
       blocked: t ? t.blocked : 0,
+      extTab: EXT.ready() && t && !t.mode && t.view && !t.view.webContents.isDestroyed() ? t.view.webContents.id : 0,
       allowed: site && !!store.get('allowSites')[baseDomain(hostOf(url))],
       adblock: !!store.get('adblock'),
       translated: t ? t.translated : false,
@@ -679,6 +700,7 @@ function snapshot() {
 function titleFor(url) {
   if (!url || url === HOME) return 'Главная';
   if (url.startsWith(SETTINGS)) return 'Настройки';
+  if (url.startsWith(EXTENSIONS)) return 'Расширения';
   return hostOf(url).replace(/^www\./, '') || 'Новая вкладка';
 }
 
@@ -1004,6 +1026,12 @@ let menuActions = new Map();
 
 const ACC = (k) => (isMac ? '⌘' : 'Ctrl+') + k;
 
+/** Для YouTube: запустилась ли защита внутри страницы (сообщает preload-page.js). */
+function ytNote(t) {
+  if (!/(^|\.)youtube\.com$/i.test(hostOf(t.url)) || t.ytOk == null) return '';
+  return t.ytOk ? ' · видео: защита ✓' : ' · видео: защита не запустилась';
+}
+
 function mainMenu(refresh) {
   const t = activeTab();
   const site = t && /^https?:/.test(t.url);
@@ -1026,7 +1054,7 @@ function mainMenu(refresh) {
       icon: on ? 'shield' : 'shield_off',
       label: 'Блокировать рекламу и слежку',
       sub: !store.get('adblock') ? 'выключено везде · нажмите, чтобы включить'
-        : base + (on ? (n ? ' · убрано ' + n : '') : ' · разрешено'),
+        : base + (on ? (n ? ' · убрано ' + n : '') + ytNote(t) : ' · разрешено'),
       on
     });
     items.push({ type: 'sep' });
@@ -1044,6 +1072,7 @@ function mainMenu(refresh) {
     items.push({ id: act(() => addToHome(t)), icon: 'home', label: 'Добавить на главную', accel: ACC('D') });
   }
   items.push({ id: act(() => openPage(DOWNLOADS)), icon: 'download', label: 'Скачанные файлы', accel: ACC('J') });
+  items.push({ id: act(() => openPage(EXTENSIONS)), icon: 'puzzle', label: 'Расширения' });
   items.push({ id: act(() => openSettings()), icon: 'settings', label: 'Доп. настройки' });
   items.push({
     id: act(() => setTheme(theme() === 'dark' ? 'light' : 'dark')),
@@ -1195,6 +1224,11 @@ function pageMenu(t, wc, p) {
     items.push({ type: 'separator' });
     items.push({ label: t.translated ? 'Показать оригинал' : 'Перевести страницу', click: () => translate(t) });
     items.push(shotMenu(t));
+  }
+  const xi = t.mode ? [] : EXT.menuItems(wc, p);
+  if (xi.length) {
+    items.push({ type: 'separator' });
+    items.push(...xi);
   }
   items.push({ type: 'separator' });
   items.push({ label: 'Просмотреть код', click: () => wc.inspectElement(p.x, p.y) });
@@ -2346,6 +2380,10 @@ function setupIpc() {
     if (a) a.fn();
   });
   // автоскролл: страница дошла до конца
+  ipcMain.on('page:yt-status', (e, ok) => {
+    const t = tabByWc(e.sender.id);
+    if (t) t.ytOk = !!ok;
+  });
   ipcMain.on('page:autoscroll-end', (e) => {
     const t = tabByWc(e.sender.id);
     if (!t || !t.autoscroll) return;
@@ -2504,6 +2542,28 @@ function setupIpc() {
   page('clear-data', () => clearAll());
   // скачанные файлы
   page('downloads', () => downloadsForPage());
+  page('ext-list', () => EXT.list());
+  page('ext-set', (e, id, on) => EXT.setOn(String(id), !!on));
+  page('ext-remove', (e, id) => EXT.remove(String(id)));
+  page('ext-options', (e, id) => {
+    const u = EXT.optionsUrl(String(id));
+    if (u) newTab(u);
+    return !!u;
+  });
+  page('ext-store', () => newTab('https://chromewebstore.google.com/'));
+  page('ext-ubo', async () => {
+    try {
+      await EXT.installUbo();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  });
+  page('ext-restart', () => {
+    saveSession();
+    app.relaunch();
+    app.exit(0);
+  });
   page('dl-open', (e, id) => {
     const d = findDownload(id);
     if (d && fs.existsSync(d.file)) shell.openPath(d.file);
@@ -2599,6 +2659,38 @@ function applyInstallOptions() {
   store.set('shortcuts', list);
 }
 
+function startExtensions() {
+  return EXT.init(sessionFor(null), {
+    store,
+    win: () => win,
+    createTab: (url, active) => {
+      const t = newTab(url || HOME, { background: !active });
+      if (!t) return null;
+      ensureView(t);
+      return t.view.webContents;
+    },
+    selectTab: (wc) => {
+      const t = tabByWc(wc.id);
+      if (t) activate(t.id);
+    },
+    removeTab: (wc) => {
+      const t = tabByWc(wc.id);
+      if (t) closeTab(t.id);
+    },
+    onChange: () => {
+      applyNet(sessionFor(null));
+      if (!win) return;
+      sendState();
+      const list = EXT.list();
+      for (const t of tabs) {
+        if (t.view && !t.view.webContents.isDestroyed() && t.url.startsWith(EXTENSIONS)) {
+          t.view.webContents.send('page:ext', list);
+        }
+      }
+    }
+  }).catch(() => {});
+}
+
 if (process.platform === 'win32') app.setAppUserModelId('app.byss.desktop');
 
 app.whenReady().then(async () => {
@@ -2627,6 +2719,8 @@ app.whenReady().then(async () => {
   adblock = new AdBlock(app.getPath('userData'), (u) => net.fetch(u));
   adblock.init().catch(() => {});
   setupIpc();
+  // расширения грузятся до вкладок (не дольше пары секунд), чтобы сразу работали на открытых сайтах
+  await Promise.race([startExtensions(), new Promise((r) => setTimeout(r, 2000))]);
   createWindow();
   setupUpdater();
 });

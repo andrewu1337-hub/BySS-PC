@@ -279,7 +279,87 @@ function render() {
   $('tr').title = n.translated ? 'Показать оригинал' : 'Перевести страницу';
   addr.placeholder = (n.mode ? n.modeName + ' · ' : '') + 'Поиск в ' + e.where + ' или адрес';
   showUrl(false);
+  renderExts();
 }
+
+// ------------------------------------------------------------------ кнопки расширений
+
+const X = window.byssExt;
+let extActs = [];
+let extTimer = 0;
+let extObserving = false;
+
+function loadExts() {
+  clearTimeout(extTimer);
+  extTimer = setTimeout(async () => {
+    try {
+      const st = await X.state();
+      extActs = (st && st.actions) || [];
+    } catch (err) {
+      extActs = [];
+    }
+    renderExts();
+  }, 60);
+}
+
+function badgeColor(c) {
+  if (Array.isArray(c)) return 'rgba(' + c.slice(0, 3).join(',') + ',' + ((c[3] == null ? 255 : c[3]) / 255) + ')';
+  return typeof c === 'string' ? c : '';
+}
+
+function extActivate(ev, id) {
+  const r = ev.currentTarget.getBoundingClientRect();
+  X.activate({
+    eventType: ev.type,
+    extensionId: id,
+    tabId: state.nav.extTab,
+    anchorRect: { x: r.left, y: r.top, width: r.width, height: r.height }
+  }).catch(() => {});
+}
+
+function renderExts() {
+  const box = $('exts');
+  const tab = state && state.nav ? state.nav.extTab : 0;
+  if (tab && !extObserving) {
+    extObserving = true;
+    X.observe().catch(() => { extObserving = false; });
+    loadExts();
+  }
+  const list = tab ? extActs.slice(0, 8) : [];
+  box.style.display = list.length ? '' : 'none';
+  const seen = new Set();
+  list.forEach((a, i) => {
+    seen.add(a.id);
+    let b = null;
+    for (const c of box.children) if (c.dataset.id === a.id) b = c;
+    if (!b) {
+      b = document.createElement('button');
+      b.className = 'ib ext';
+      b.dataset.id = a.id;
+      b.appendChild(document.createElement('img'));
+      b.appendChild(document.createElement('span')).className = 'xb';
+      b.addEventListener('click', (ev) => extActivate(ev, a.id));
+      b.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        extActivate(ev, a.id);
+      });
+    }
+    const info = Object.assign({}, a, (a.tabs && a.tabs[tab]) || {});
+    if (b.title !== (info.title || '')) b.title = info.title || '';
+    const src = 'crx://extension-icon/' + a.id + '/32/2?tabId=' + tab + '&partition=' + encodeURIComponent(X.partition)
+      + (info.iconModified ? '&t=' + info.iconModified : '');
+    const img = b.firstChild;
+    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+    const bd = b.lastChild;
+    bd.textContent = info.text || '';
+    bd.style.display = info.text ? '' : 'none';
+    bd.style.background = badgeColor(info.color) || '';
+    if (box.children[i] !== b) box.insertBefore(b, box.children[i] || null);
+  });
+  for (const c of [...box.children]) if (!seen.has(c.dataset.id)) c.remove();
+}
+
+if (X) X.onUpdate(loadExts);
 
 api.on('state', (s) => {
   // другая вкладка — недопечатанный текст из прошлой не нужен

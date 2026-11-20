@@ -102,3 +102,11 @@ body.typing #pill .pa { display: none !important; }
   28% { transform: translate(-50%, -62%) scale(1.3); opacity: 1; }
   100% { transform: translate(-50%, -125%) scale(1.05); opacity: 0; }
 }
+
+/* кнопки расширений */
+#exts { display: flex; align-items: center; gap: 1px; -webkit-app-region: no-drag; }
+.ib.ext { position: relative; width: 32px; }
+.ib.ext img { width: 18px; height: 18px; display: block; margin: auto; }
+.ib.ext .xb { position: absolute; right: 1px; bottom: 2px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px;
+  background: #5f6368; color: #fff; font-size: 9.5px; line-height: 14px; font-weight: 600; text-align: center;
+  box-sizing: border-box; pointer-events: none; }

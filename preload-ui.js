@@ -16,3 +16,14 @@ contextBridge.exposeInMainWorld('byssUI', {
     if (ON.includes(ch)) ipcRenderer.on(ch, (e, ...args) => fn(...args));
   }
 });
+
+// Кнопки расширений (uBlock Origin, Dark Reader…) — состояние и нажатие берутся у системы расширений.
+const PART = 'persist:main';
+const crx = (name, ...args) => ipcRenderer.invoke('crx-msg-remote', PART, name, ...args);
+contextBridge.exposeInMainWorld('byssExt', {
+  partition: PART,
+  state: () => crx('browserAction.getState'),
+  activate: (d) => crx('browserAction.activate', d),
+  observe: () => crx('browserAction.addObserver'),
+  onUpdate: (fn) => ipcRenderer.on('browserAction.update', () => fn())
+});

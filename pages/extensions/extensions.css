@@ -1,0 +1,31 @@
+#wrap { max-width: 860px; margin: 0 auto; padding: 30px 24px 60px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+h1 { font-size: 24px; font-weight: 600; margin: 0; }
+.tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.card, .group { background: var(--card); border-radius: 20px; padding: 4px 8px; margin-bottom: 14px; }
+.row { display: flex; align-items: center; gap: 14px; padding: 12px 10px; border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+.ic { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 10px; background: var(--card2); }
+.ic.big { width: 42px; height: 42px; }
+.ic img { width: 32px; height: 32px; }
+.ic svg { width: 20px; height: 20px; color: var(--text2); }
+.ic.has { background: none; }
+.info { flex: 1; min-width: 0; }
+.nm { font-size: 14.5px; font-weight: 600; }
+.nm .ver { font-weight: 400; color: var(--text2); font-size: 12.5px; margin-left: 6px; }
+.sub { color: var(--text2); font-size: 12.5px; margin-top: 3px; line-height: 1.45; }
+.warn { color: #FF9F0A; font-size: 12.5px; margin-top: 4px; }
+.acts { display: flex; gap: 8px; flex: none; align-items: center; }
+.acts .btn { padding: 7px 13px; font-size: 13px; }
+.sw { width: 46px; height: 28px; border-radius: 14px; background: var(--card2); position: relative; border: 0; padding: 0; flex: none; transition: background .15s; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 11px; background: #fff; transition: left .15s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.sw.on { background: #30D158; }
+.sw.on::after { left: 21px; }
+.sw:disabled { opacity: .5; }
+#msg { background: var(--card); border-radius: 16px; padding: 12px 16px; margin-bottom: 14px; font-size: 13px; line-height: 1.45; }
+#msg.err { color: var(--danger); }
+#msg .btn { margin-left: 10px; padding: 6px 12px; font-size: 13px; }
+.empty { text-align: center; color: var(--text2); padding: 50px 20px; }
+.empty svg { width: 46px; height: 46px; display: block; margin: 0 auto 14px; opacity: .6; }
+.note { color: var(--text2); font-size: 12px; margin: 22px 6px 0; line-height: 1.6; }
+html:has(body.light) { background: #F2F2F7; }

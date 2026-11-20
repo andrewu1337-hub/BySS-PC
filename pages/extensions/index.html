@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' byss:; script-src byss:; style-src byss: 'unsafe-inline'; img-src data: byss:; font-src byss:">
+<title>Расширения</title>
+<link rel="icon" href="byss://shared/byss-shield.png">
+<link rel="stylesheet" href="byss://shared/common.css">
+<link rel="stylesheet" href="extensions.css">
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <h1>Расширения</h1>
+    <div class="tools">
+      <button class="btn p" id="store">Открыть магазин Chrome</button>
+    </div>
+  </header>
+  <div id="msg" hidden></div>
+  <section id="ubo" class="card" hidden>
+    <div class="row">
+      <div class="ic big" id="uboIc"></div>
+      <div class="info">
+        <div class="nm">uBlock Origin</div>
+        <div class="sub">Сильный блокировщик рекламы, в том числе на YouTube. Его правила обновляются каждый день.
+          В магазине Chrome его больше нет, поэтому BySS скачает его с официальной страницы автора на GitHub.</div>
+      </div>
+      <div class="acts"><button class="btn p" id="uboGet">Установить</button></div>
+    </div>
+  </section>
+  <div id="list"></div>
+  <p class="note">Расширения работают в обычных вкладках. В режимах BySS их нет: там ничего не сохраняется.<br>
+    Ставятся из магазина Chrome кнопкой «Установить» на странице расширения. Перед установкой BySS спросит.<br>
+    Блокировщики рекламы из магазина Chrome (uBlock Origin Lite, AdGuard, AdBlock) в BySS рекламу не убирают:
+    им нужна функция, которой нет в движке браузера. Для рекламы есть встроенная защита BySS и uBlock Origin.<br>
+    Пока включён uBlock Origin, встроенная блокировка BySS отключена. После включения или выключения обновите открытые страницы.</p>
+</div>
+<script src="byss://shared/icons.js"></script>
+<script src="extensions.js"></script>
+</body>
+</html>

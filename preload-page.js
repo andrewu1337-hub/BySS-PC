@@ -165,19 +165,24 @@ const YT_CSS = [
   // компьютерная версия
   '#masthead-ad', 'ytd-ad-slot-renderer', 'ytd-in-feed-ad-layout-renderer', 'ytd-display-ad-renderer',
   'ytd-promoted-sparkles-web-renderer', 'ytd-promoted-video-renderer', 'ytd-banner-promo-renderer',
-  'ytd-statement-banner-renderer', 'ytd-player-legacy-desktop-watch-ads-renderer', '#player-ads',
+  'ytd-statement-banner-renderer', 'ytd-player-legacy-desktop-watch-ads-renderer', 'ytd-search-pyv-renderer',
   'ytd-companion-slot-renderer', 'ytd-action-companion-ad-renderer', 'ytd-merch-shelf-renderer',
-  'ytd-ads-engagement-panel-content-renderer', 'ytd-video-masthead-ad-v3-renderer',
-  'ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer)',
-  'ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer)',
-  'ytd-rich-section-renderer:has(ytd-statement-banner-renderer)',
-  'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"]',
+  'ytd-ads-engagement-panel-content-renderer', 'ytd-video-masthead-ad-v3-renderer', 'ytd-brand-video-singleton-renderer',
+  'ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer)', 'ytd-rich-item-renderer:has(> ytd-ad-slot-renderer)',
+  'ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer)', 'ytd-rich-item-renderer:has(ad-badge-view-model)',
+  'ytd-rich-item-renderer:has(feed-ad-metadata-view-model)', 'ytd-rich-section-renderer:has(ytd-ad-slot-renderer)',
+  'ytd-rich-section-renderer:has(ytd-statement-banner-renderer)', 'ytd-video-renderer:has(ad-badge-view-model)',
+  '.ytd-shorts:has(> .ytd-reel-video-renderer > ytd-ad-slot-renderer)', '#shopping-timely-shelf',
+  'yt-overlay-product-sticker', 'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"]',
   '.ytp-ad-overlay-container', '.ytp-ad-image-overlay', '.ytp-featured-product', '.ytp-suggested-action',
+  // окно «блокировщики рекламы запрещены»
+  'ytd-enforcement-message-view-model', 'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)',
   // мобильная версия
   'ytm-promoted-sparkles-web-renderer', 'ytm-promoted-video-renderer', 'ytm-companion-ad-renderer',
   'ytm-ad-slot-renderer', 'ad-slot-renderer', 'ytm-paid-content-overlay-renderer', 'ytm-statement-banner-renderer',
-  'ytm-mealbar-promo-renderer', 'ytm-companion-slot'
-].join(',') + '{display:none!important;}';
+  'ytm-mealbar-promo-renderer', 'ytm-companion-slot', 'ytm-rich-item-renderer:has(> ad-slot-renderer)'
+  // #player-ads не прячем: YouTube проверяет этот блок и замечает блокировщик
+].map((sel) => sel + '{display:none!important}').join('\n'); // каждое правило отдельно: одно непонятное браузеру не ломает остальные
 
 const YT_SKIP = '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, '
   + '.ytp-ad-skip-button-container button, .ytp-ad-skip-button-slot button, button[id^="skip-button"]';
@@ -197,8 +202,20 @@ function ytGuard() {
     at.appendChild(st);
   }
 
+  function unblock() {
+    // окно «блокировщики запрещены» — убрать и продолжить видео
+    const m = document.querySelector('ytd-enforcement-message-view-model');
+    if (!m) return;
+    const dlg = m.closest('tp-yt-paper-dialog') || m;
+    dlg.remove();
+    document.querySelectorAll('tp-yt-iron-overlay-backdrop').forEach((b) => b.remove());
+    const v = document.querySelector('#movie_player video, video');
+    if (v && v.paused) v.play().catch(() => {});
+  }
+
   function tick() {
     try {
+      unblock();
       const p = document.querySelector('.html5-video-player.ad-showing, .html5-video-player.ad-interrupting, #movie_player.ad-showing');
       const v = document.querySelector('#movie_player video.html5-main-video, .html5-video-player video, video');
       if (p && v) {
@@ -240,6 +257,14 @@ function ytGuard() {
   }, 250);
   addCss();
   document.addEventListener('DOMContentLoaded', addCss);
+  // сообщить браузеру, запустилась ли защита внутри страницы (yt.js ставит метку)
+  window.addEventListener('load', () => setTimeout(() => {
+    try {
+      ipcRenderer.send('page:yt-status', document.documentElement.getAttribute('data-byss-yt') === '1');
+    } catch (e) {
+      // ignore
+    }
+  }, 1500));
 }
 
 // ------------------------------------------------------------------ запуск
