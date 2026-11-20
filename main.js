@@ -48,8 +48,10 @@ let fullscreenTab = null;
 const closed = [];
 const isMac = process.platform === 'darwin';
 
-// значок: голова льва без фона, с тёмным контуром — видна и на светлой, и на тёмной панели задач
-const ICON = path.join(__dirname, 'assets', 'lion-big.png');
+// значок: тот же лев, что и на Android, без фона. Для Windows — .ico, где каждый размер
+// (16…256) нарисован отдельно, поэтому на панели задач он чёткий, а не смазанный
+let YT_JS = null;
+const ICON = path.join(__dirname, 'assets', process.platform === 'win32' ? 'byss.ico' : 'lion-big.png');
 
 const COLORS = {
   dark: { bg: '#000000', text: '#FFFFFF' },
@@ -2033,6 +2035,24 @@ function fromUi(e) {
 }
 
 function setupIpc() {
+  // YouTube: реклама в видео идёт с тех же серверов, что и само видео, поэтому её не отрезать
+  // по адресу. Скрипт (yt.js) убирает её из ответов плеера ещё до запуска страницы.
+  ipcMain.on('site:yt', (e) => {
+    e.returnValue = null;
+    try {
+      const t = tabByWc(e.sender.id);
+      const url = (e.senderFrame && e.senderFrame.url) || e.sender.getURL() || '';
+      if (!t || !/^https:\/\/([a-z0-9-]+\.)*youtube\.com\//i.test(url)) return;
+      if (!store.get('adblock') || store.get('allowSites')['youtube.com']) return;
+      if (YT_JS === null) {
+        try { YT_JS = fs.readFileSync(path.join(__dirname, 'yt.js'), 'utf8'); } catch (err) { YT_JS = ''; }
+      }
+      if (YT_JS) e.returnValue = { code: YT_JS };
+    } catch (err) {
+      e.returnValue = null;
+    }
+  });
+
   ipcMain.on('ui:ready', (e) => {
     if (fromUi(e)) sendState();
   });
