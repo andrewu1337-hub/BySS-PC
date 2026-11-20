@@ -375,6 +375,7 @@ function newTab(url, opts = {}) {
     view: null,
     origUrl: null,
     translated: false,
+    autoscroll: false,
     zoom: 0
   };
   const cur = activeTab();
@@ -536,7 +537,13 @@ function wire(t, wc) {
   wc.on('did-start-navigation', (e) => {
     const isMain = e && (e.isMainFrame !== undefined ? e.isMainFrame : true);
     const same = e && e.isSameDocument;
-    if (isMain && !same) t.blocked = 0;
+    if (isMain && !same) {
+      t.blocked = 0;
+      if (t.autoscroll) {
+        t.autoscroll = false; // новая страница — автоскролл начинается заново только по команде
+        sendState();
+      }
+    }
   });
   const onNav = (e, url) => {
     t.url = url;
@@ -659,6 +666,7 @@ function snapshot() {
       allowed: site && !!store.get('allowSites')[baseDomain(hostOf(url))],
       adblock: !!store.get('adblock'),
       translated: t ? t.translated : false,
+      autoscroll: t ? !!t.autoscroll : false,
       mode: t ? t.mode : null,
       modeName: t && t.mode ? modeName(t.mode) : null
     }
@@ -837,6 +845,96 @@ function shotMenu(t) {
   };
 }
 
+// ======================================================================= автоскролл
+// Настройки общие для всех вкладок, запускается на текущей. Плавно — скорость 1…10,
+// шагами — интервал в секундах и шаг в процентах экрана. Колесо мыши ставит на паузу.
+const AS_SPEEDS = [15, 25, 40, 60, 85, 120, 170, 240, 340, 480]; // пикселей в секунду
+const AS_INTERVALS = [1, 2, 3, 4, 5, 7, 10, 15, 20, 30, 45, 60];
+const AS_STEPS = [10, 25, 50, 75, 90, 100];
+
+function asCfg() {
+  const a = Object.assign({ mode: 'smooth', level: 4, interval: 5, step: 75 }, store.get('autoscroll') || {});
+  a.level = Math.min(10, Math.max(1, Math.round(a.level) || 4));
+  if (!AS_INTERVALS.includes(a.interval)) a.interval = 5;
+  if (!AS_STEPS.includes(a.step)) a.step = 75;
+  if (a.mode !== 'step') a.mode = 'smooth';
+  return a;
+}
+
+function asPayload() {
+  const a = asCfg();
+  return { mode: a.mode, speed: AS_SPEEDS[a.level - 1], interval: a.interval, step: a.step };
+}
+
+function setAsCfg(patch) {
+  store.set('autoscroll', Object.assign(asCfg(), patch));
+  for (const t of tabs) {
+    if (t.autoscroll && t.view && !t.view.webContents.isDestroyed()) {
+      t.view.webContents.send('byss:autoscroll', { on: true, cfg: asPayload() });
+    }
+  }
+}
+
+function setAutoscroll(t, on) {
+  if (!t || !t.view || t.view.webContents.isDestroyed()) return;
+  if (on && !/^https?:/.test(t.url)) return;
+  t.autoscroll = !!on;
+  t.view.webContents.send('byss:autoscroll', { on: t.autoscroll, cfg: asPayload() });
+  sendState();
+  if (on) toast('Автоскролл: колесо мыши — пауза, кнопка в адресной строке — стоп');
+}
+
+/** Соседнее значение из списка: dir = +1 / -1; null — дальше некуда. */
+function asNext(list, v, dir) {
+  const i = list.indexOf(v);
+  const j = i + dir;
+  return i < 0 || j < 0 || j >= list.length ? null : list[j];
+}
+
+function autoscrollGroup(t, act) {
+  const a = asCfg();
+  const children = [
+    {
+      id: act(() => setAutoscroll(t, !t.autoscroll)),
+      icon: t.autoscroll ? 'pause' : 'play',
+      label: t.autoscroll ? 'Остановить' : 'Запустить'
+    },
+    {
+      type: 'seg',
+      label: 'Режим',
+      options: [
+        { id: act(() => setAsCfg({ mode: 'smooth' }), true), label: 'Плавно', on: a.mode === 'smooth' },
+        { id: act(() => setAsCfg({ mode: 'step' }), true), label: 'Шагами', on: a.mode === 'step' }
+      ]
+    }
+  ];
+  const stepper = (label, value, list, cur, key, fmt) => {
+    const dn = asNext(list, cur, -1);
+    const up = asNext(list, cur, 1);
+    return {
+      type: 'stepper',
+      label,
+      value: fmt(value),
+      dec: dn == null ? null : act(() => setAsCfg({ [key]: dn }), true),
+      inc: up == null ? null : act(() => setAsCfg({ [key]: up }), true)
+    };
+  };
+  if (a.mode === 'smooth') {
+    children.push(stepper('Скорость', a.level, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], a.level, 'level', (v) => v + ' из 10'));
+  } else {
+    children.push(stepper('Интервал', a.interval, AS_INTERVALS, a.interval, 'interval', (v) => v + ' с'));
+    children.push(stepper('Шаг', a.step, AS_STEPS, a.step, 'step', (v) => v + '% экрана'));
+  }
+  return {
+    type: 'group',
+    key: 'autoscroll',
+    icon: 'autoscroll',
+    label: 'Автоскролл',
+    badge: t.autoscroll ? 'идёт' : null,
+    children
+  };
+}
+
 // Своё меню вместо системного: пункты по группам, «Удалить все данные» — красным,
 // ниже другим цветом «Обновить браузер» и «Режим BySS». Ссылка, поиск и печать — в адресной строке.
 let menuShown = false;
@@ -846,15 +944,15 @@ let menuActions = new Map();
 
 const ACC = (k) => (isMac ? '⌘' : 'Ctrl+') + k;
 
-function mainMenu() {
+function mainMenu(refresh) {
   const t = activeTab();
   const site = t && /^https?:/.test(t.url);
   const modes = store.get('modes') || [];
   const acts = new Map();
   let seq = 0;
-  const act = (fn) => {
+  const act = (fn, keep) => {
     const k = 'a' + (++seq);
-    acts.set(k, fn);
+    acts.set(k, { fn, keep: !!keep }); // keep — меню остаётся открытым (настройка поменялась)
     return k;
   };
   const items = [];
@@ -882,6 +980,7 @@ function mainMenu() {
         { id: act(() => shotArea(t)), label: 'Выделить область…', accel: ACC('Shift+S') }
       ]
     });
+    items.push(autoscrollGroup(t, act));
     items.push({ id: act(() => addToHome(t)), icon: 'home', label: 'Добавить на главную', accel: ACC('D') });
   }
   items.push({ id: act(() => openPage(DOWNLOADS)), icon: 'download', label: 'Скачанные файлы', accel: ACC('J') });
@@ -909,13 +1008,13 @@ function mainMenu() {
       { id: act(() => newModeTab(newMode())), icon: 'plus', label: 'Новый режим BySS' }
     ]
   });
-  showMenu(items, acts);
+  showMenu(items, acts, refresh);
 }
 
-function showMenu(items, acts) {
+function showMenu(items, acts, refresh) {
   if (!win || !menuView) return;
   menuActions = acts;
-  const msg = { items, light: theme() === 'light', top: top() - 4 };
+  const msg = { items, light: theme() === 'light', top: top() - 4, refresh: !!refresh };
   if (menuReady) menuView.webContents.send('show', msg);
   else menuPending = msg;
   if (!menuShown) {
@@ -2108,17 +2207,16 @@ function fromUi(e) {
 function setupIpc() {
   // YouTube: реклама в видео идёт с тех же серверов, что и само видео, поэтому её не отрезать
   // по адресу. Скрипт (yt.js) убирает её из ответов плеера ещё до запуска страницы.
-  ipcMain.on('site:yt', (e) => {
+  // Ответ: null — рекламу на YouTube не трогаем (блокировка выключена или сайт разрешён).
+  ipcMain.on('site:yt', (e, host) => {
     e.returnValue = null;
     try {
-      const t = tabByWc(e.sender.id);
-      const url = (e.senderFrame && e.senderFrame.url) || e.sender.getURL() || '';
-      if (!t || !/^https:\/\/([a-z0-9-]+\.)*youtube\.com\//i.test(url)) return;
+      if (!tabByWc(e.sender.id) || !/(^|\.)youtube\.com$/i.test(String(host || ''))) return;
       if (!store.get('adblock') || store.get('allowSites')['youtube.com']) return;
       if (YT_JS === null) {
         try { YT_JS = fs.readFileSync(path.join(__dirname, 'yt.js'), 'utf8'); } catch (err) { YT_JS = ''; }
       }
-      if (YT_JS) e.returnValue = { code: YT_JS };
+      e.returnValue = { code: YT_JS || '' };
     } catch (err) {
       e.returnValue = null;
     }
@@ -2178,9 +2276,27 @@ function setupIpc() {
   ipcMain.on('ui:menu', (e) => fromUi(e) && (menuShown ? hideMenu() : mainMenu()));
   ipcMain.on('menu:pick', (e, id) => {
     if (!menuView || e.sender !== menuView.webContents) return;
-    const fn = menuActions.get(id);
+    const a = menuActions.get(id);
+    if (a && a.keep) {
+      a.fn();
+      if (menuShown) mainMenu(true);
+      return;
+    }
     hideMenu();
-    if (fn) fn();
+    if (a) a.fn();
+  });
+  // автоскролл: страница дошла до конца
+  ipcMain.on('page:autoscroll-end', (e) => {
+    const t = tabByWc(e.sender.id);
+    if (!t || !t.autoscroll) return;
+    t.autoscroll = false;
+    sendState();
+    if (t === activeTab()) toast('Автоскролл остановлен — конец страницы');
+  });
+  ipcMain.on('ui:autoscroll', (e) => {
+    if (!fromUi(e)) return;
+    const t = activeTab();
+    if (t) setAutoscroll(t, !t.autoscroll);
   });
   ipcMain.on('menu:close', (e) => {
     if (menuView && e.sender === menuView.webContents) hideMenu();

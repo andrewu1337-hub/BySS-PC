@@ -25,6 +25,7 @@ const DEFAULTS = {
   window: null,               // размер и положение окна, развёрнуто ли на весь экран
   installStamp: '',           // какие настройки установщика уже применены
   modes: [],                  // режимы BySS: [{ id, name }]
+  autoscroll: { mode: 'smooth', level: 4, interval: 5, step: 75 }, // автоскролл: плавно или шагами
   downloads: []               // скачанные файлы (без режимов BySS)
 };
 

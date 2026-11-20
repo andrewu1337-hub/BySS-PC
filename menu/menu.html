@@ -52,6 +52,20 @@
   .tg.on { background: var(--on); }
   .tg.on::after, body:not(.light) .tg.on::after { left: 17px; background: var(--knob); }
   .hd { color: var(--text2); font-size: 11.5px; padding: 6px 16px 2px; }
+  .it .bd { color: var(--accent); font-size: 12px; flex: none; }
+  .ctl { display: flex; align-items: center; gap: 10px; min-height: 36px; margin: 0 6px; padding: 0 10px 0 41px; }
+  .ctl .cl { flex: 1; min-width: 0; color: var(--text2); white-space: nowrap; }
+  .seg { display: flex; background: var(--hover); border-radius: 9px; padding: 2px; flex: none; }
+  .seg button { border: 0; background: none; color: var(--text2); font: inherit; font-size: 12.5px; padding: 4px 10px;
+    border-radius: 7px; outline: 0; }
+  .seg button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+  .seg button:not(.on):hover, .seg button:focus-visible { color: var(--text); }
+  .stp { display: flex; align-items: center; gap: 2px; flex: none; }
+  .stp button { width: 28px; height: 28px; border: 0; border-radius: 8px; background: var(--hover); color: var(--text);
+    font: inherit; font-size: 16px; line-height: 1; padding: 0; outline: 0; }
+  .stp button:hover:not(:disabled), .stp button:focus-visible { background: rgba(127,127,127,.3); }
+  .stp button:disabled { opacity: .35; }
+  .stp .sv { min-width: 86px; text-align: center; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>

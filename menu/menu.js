@@ -5,6 +5,7 @@ const api = window.byssMenu;
 const I = window.ICONS;
 const panel = document.getElementById('panel');
 let shownAt = 0;
+let openKeys = new Set(); // какие группы раскрыты — при обновлении меню остаются раскрытыми
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -39,20 +40,68 @@ function item(it) {
   return row;
 }
 
+function seg(it) {
+  const row = el('div', 'ctl');
+  row.appendChild(el('span', 'cl', it.label));
+  const box = el('span', 'seg');
+  for (const o of it.options || []) {
+    const b = el('button', o.on ? 'on' : '', o.label);
+    b.onclick = () => {
+      if (!o.on) api.pick(o.id);
+    };
+    box.appendChild(b);
+  }
+  row.appendChild(box);
+  return row;
+}
+
+function stepper(it) {
+  const row = el('div', 'ctl');
+  row.appendChild(el('span', 'cl', it.label));
+  const box = el('span', 'stp');
+  const dn = el('button', null, '−');
+  const up = el('button', null, '+');
+  dn.disabled = !it.dec;
+  up.disabled = !it.inc;
+  dn.title = 'Меньше';
+  up.title = 'Больше';
+  dn.onclick = () => it.dec && api.pick(it.dec);
+  up.onclick = () => it.inc && api.pick(it.inc);
+  box.append(dn, el('span', 'sv', it.value), up);
+  row.appendChild(box);
+  return row;
+}
+
+function child(c) {
+  if (c.type === 'seg') return seg(c);
+  if (c.type === 'stepper') return stepper(c);
+  return item(c);
+}
+
 function group(it) {
   const wrap = el('div');
   const b = el('button', 'it' + (it.color ? ' ' + it.color : ''));
   b.setAttribute('aria-expanded', 'false');
   const ch = el('span', 'ch');
   ch.innerHTML = I.chevron;
-  b.append(icon(it.icon), el('span', 'lb', it.label), ch);
+  b.append(icon(it.icon), el('span', 'lb', it.label));
+  if (it.badge) b.appendChild(el('span', 'bd', it.badge));
+  b.appendChild(ch);
   const sub = el('div', 'sub');
-  for (const c of it.children || []) sub.appendChild(item(c));
-  b.onclick = () => {
-    const open = !sub.classList.contains('open');
+  for (const c of it.children || []) sub.appendChild(child(c));
+  const setOpen = (open) => {
     sub.classList.toggle('open', open);
     b.classList.toggle('open', open);
     b.setAttribute('aria-expanded', String(open));
+    if (it.key) {
+      if (open) openKeys.add(it.key);
+      else openKeys.delete(it.key);
+    }
+  };
+  if (it.key && openKeys.has(it.key)) setOpen(true);
+  b.onclick = () => {
+    const open = !sub.classList.contains('open');
+    setOpen(open);
     if (open) {
       const first = sub.querySelector('button');
       if (first && document.activeElement === b && b.matches(':focus-visible')) first.focus();
@@ -82,6 +131,8 @@ function toggle(it) {
 
 function show(m) {
   document.body.classList.toggle('light', !!m.light);
+  const keepScroll = m.refresh ? panel.scrollTop : 0;
+  if (!m.refresh) openKeys = new Set();
   panel.innerHTML = '';
   for (const it of m.items || []) {
     if (it.type === 'sep') panel.appendChild(el('div', 'sep'));
@@ -92,6 +143,14 @@ function show(m) {
   }
   panel.style.top = (m.top || 0) + 'px';
   panel.style.maxHeight = 'calc(100vh - ' + ((m.top || 0) + 10) + 'px)';
+  if (m.refresh) {
+    // настройка поменялась — перерисовали на месте, без анимации
+    panel.style.animation = 'none';
+    panel.style.display = 'block';
+    panel.scrollTop = keepScroll;
+    return;
+  }
+  panel.style.animation = '';
   panel.style.display = 'none';
   void panel.offsetWidth; // заново запускаем появление
   panel.style.display = 'block';

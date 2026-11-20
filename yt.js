@@ -1,6 +1,6 @@
-/* BySS: только для YouTube. Выполняется в странице до её собственных скриптов.
-   Убирает рекламу из ответов плеера, прячет рекламные блоки, а если ролик всё же
-   начался — глушит его, проматывает и нажимает «Пропустить». То же самое, что в BySS на Android. */
+/* BySS: только для YouTube. Выполняется в странице до её собственных скриптов и убирает
+   рекламу из ответов плеера. Скрыть рекламные блоки и промотать рекламу, если она всё же
+   началась, — это делает preload-page.js (ytGuard), туда защита страницы не достаёт. */
 (function () {
   if (window.__byssYt) return;
   window.__byssYt = true;
@@ -49,49 +49,4 @@
     } catch (e) { /* ignore */ }
   });
 
-  var css = [
-    // компьютерная версия
-    '#masthead-ad', 'ytd-ad-slot-renderer', 'ytd-in-feed-ad-layout-renderer', 'ytd-display-ad-renderer',
-    'ytd-promoted-sparkles-web-renderer', 'ytd-promoted-video-renderer', 'ytd-banner-promo-renderer',
-    'ytd-statement-banner-renderer', 'ytd-player-legacy-desktop-watch-ads-renderer', '#player-ads',
-    'ytd-companion-slot-renderer', 'ytd-action-companion-ad-renderer', 'ytd-merch-shelf-renderer',
-    'ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer)',
-    'ytd-rich-section-renderer:has(ytd-statement-banner-renderer)',
-    'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"]',
-    '.ytp-ad-overlay-container', '.ytp-ad-image-overlay', '.ytp-featured-product', '.ytp-suggested-action',
-    // мобильная версия
-    'ytm-promoted-sparkles-web-renderer', 'ytm-promoted-video-renderer', 'ytm-companion-ad-renderer',
-    'ytm-ad-slot-renderer', 'ad-slot-renderer', 'ytm-paid-content-overlay-renderer', 'ytm-statement-banner-renderer',
-    'ytm-mealbar-promo-renderer', 'ytm-companion-slot'
-  ].join(',') + '{display:none!important;}';
-  function addCss() {
-    if (document.getElementById('__byss_yt')) return;
-    var root = document.head || document.documentElement;
-    if (!root) return;
-    var st = document.createElement('style');
-    st.id = '__byss_yt';
-    st.textContent = css;
-    root.appendChild(st);
-  }
-  addCss();
-  document.addEventListener('DOMContentLoaded', addCss);
-
-  var mutedByUs = false;
-  setInterval(function () {
-    try {
-      addCss();
-      var p = document.querySelector('.ad-showing, .ad-interrupting');
-      var v = document.querySelector('#movie_player video, video');
-      if (p && v) {
-        if (!v.muted) { v.muted = true; mutedByUs = true; }
-        if (isFinite(v.duration) && v.duration > 0 && v.currentTime < v.duration - 0.3) v.currentTime = v.duration;
-        var b = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button,'
-          + ' .ytp-ad-skip-button-container button, button.ytp-ad-skip-button-modern');
-        if (b) b.click();
-      } else if (mutedByUs && v) {
-        v.muted = false;
-        mutedByUs = false;
-      }
-    } catch (e) { /* ignore */ }
-  }, 300);
 })();

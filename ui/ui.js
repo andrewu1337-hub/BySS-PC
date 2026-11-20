@@ -11,6 +11,7 @@ $('reload').innerHTML = I.reload;
 $('tr').innerHTML = I.translate;
 $('menu').innerHTML = I.menu;
 $('pfind').innerHTML = I.search;
+$('pas').innerHTML = I.autoscroll;
 $('pcopy').innerHTML = I.link;
 $('pprint').innerHTML = I.print;
 $('fup').innerHTML = '<svg viewBox="0 0 24 24"><path d="M6,15 L12,9 L18,15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -42,6 +43,7 @@ $('menu').onclick = () => api.send('ui:menu');
 $('shield').onclick = () => api.send('ui:shield');
 $('tr').onclick = () => api.send('ui:translate');
 $('pfind').onclick = () => api.send('ui:find');
+$('pas').onclick = () => api.send('ui:autoscroll');
 $('pcopy').onclick = () => {
   api.send('ui:copy');
   const b = $('pcopy');
@@ -271,6 +273,7 @@ function render() {
   sh.title = on ? 'Реклама и трекеры блокируются' + (n.blocked ? ' · заблокировано: ' + n.blocked : '') : 'Блокировка выключена для этого сайта';
   $('tr').style.display = n.site ? '' : 'none';
   for (const k of ['pfind', 'pcopy', 'pprint']) $(k).style.display = n.site ? '' : 'none';
+  $('pas').style.display = n.site && n.autoscroll ? '' : 'none';
   $('pfind').classList.toggle('on', !!s.findOpen);
   $('tr').classList.toggle('on', n.translated);
   $('tr').title = n.translated ? 'Показать оригинал' : 'Перевести страницу';
