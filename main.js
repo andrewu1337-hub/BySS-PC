@@ -450,6 +450,7 @@ function closeTab(id) {
     if (closed.length > 25) closed.shift();
   }
   tabs.splice(i, 1);
+  clearInterval(t.asTimer);
   if (fullscreenTab === t) fullscreenTab = null;
   if (t.view) {
     try {
@@ -541,6 +542,8 @@ function wire(t, wc) {
       t.blocked = 0;
       if (t.autoscroll) {
         t.autoscroll = false; // новая страница — автоскролл начинается заново только по команде
+        clearInterval(t.asTimer);
+        t.asTimer = null;
         sendState();
       }
     }
@@ -848,16 +851,21 @@ function shotMenu(t) {
 // ======================================================================= автоскролл
 // Настройки общие для всех вкладок, запускается на текущей. Плавно — скорость 1…10,
 // шагами — интервал в секундах и шаг в процентах экрана. Колесо мыши ставит на паузу.
+// Колесом — браузер сам «крутит колёсико» через интервал: так листаются ленты вроде
+// TikTok, которые обычную прокрутку не принимают.
 const AS_SPEEDS = [15, 25, 40, 60, 85, 120, 170, 240, 340, 480]; // пикселей в секунду
 const AS_INTERVALS = [1, 2, 3, 4, 5, 7, 10, 15, 20, 30, 45, 60];
 const AS_STEPS = [10, 25, 50, 75, 90, 100];
+const AS_TICKS = [1, 2, 3, 5, 10];
+const AS_MODES = ['smooth', 'step', 'wheel'];
 
 function asCfg() {
-  const a = Object.assign({ mode: 'smooth', level: 4, interval: 5, step: 75 }, store.get('autoscroll') || {});
+  const a = Object.assign({ mode: 'smooth', level: 4, interval: 5, step: 75, ticks: 1 }, store.get('autoscroll') || {});
   a.level = Math.min(10, Math.max(1, Math.round(a.level) || 4));
   if (!AS_INTERVALS.includes(a.interval)) a.interval = 5;
   if (!AS_STEPS.includes(a.step)) a.step = 75;
-  if (a.mode !== 'step') a.mode = 'smooth';
+  if (!AS_TICKS.includes(a.ticks)) a.ticks = 1;
+  if (!AS_MODES.includes(a.mode)) a.mode = 'smooth';
   return a;
 }
 
@@ -868,10 +876,47 @@ function asPayload() {
 
 function setAsCfg(patch) {
   store.set('autoscroll', Object.assign(asCfg(), patch));
-  for (const t of tabs) {
-    if (t.autoscroll && t.view && !t.view.webContents.isDestroyed()) {
-      t.view.webContents.send('byss:autoscroll', { on: true, cfg: asPayload() });
-    }
+  for (const t of tabs) if (t.autoscroll) applyAutoscroll(t);
+}
+
+/** Передать вкладке текущее состояние: прокрутку ведёт страница, а «колесом» — сам браузер по таймеру. */
+function applyAutoscroll(t) {
+  clearInterval(t.asTimer);
+  t.asTimer = null;
+  if (!t.view || t.view.webContents.isDestroyed()) return;
+  const wc = t.view.webContents;
+  const a = asCfg();
+  if (t.autoscroll && a.mode === 'wheel') {
+    wc.send('byss:autoscroll', { on: false });
+    t.asTimer = setInterval(() => wheelTick(t), a.interval * 1000);
+  } else {
+    wc.send('byss:autoscroll', { on: !!t.autoscroll, cfg: asPayload() });
+  }
+}
+
+/** Один «щелчок» колёсика (или несколько) посреди страницы — как будто крутит пользователь. */
+function wheelTick(t) {
+  if (!t.autoscroll || !t.view || t.view.webContents.isDestroyed() || !tabs.includes(t)) {
+    clearInterval(t.asTimer);
+    t.asTimer = null;
+    return;
+  }
+  if (t !== activeTab() || !win || win.isMinimized()) return; // фоновую вкладку не трогаем
+  const b = t.view.getBounds();
+  const n = asCfg().ticks;
+  try {
+    t.view.webContents.sendInputEvent({
+      type: 'mouseWheel',
+      x: Math.round(b.width / 2),
+      y: Math.round(b.height / 2),
+      deltaX: 0,
+      deltaY: -120 * n,
+      wheelTicksX: 0,
+      wheelTicksY: -n,
+      canScroll: true
+    });
+  } catch (e) {
+    // вкладка закрывается
   }
 }
 
@@ -879,9 +924,20 @@ function setAutoscroll(t, on) {
   if (!t || !t.view || t.view.webContents.isDestroyed()) return;
   if (on && !/^https?:/.test(t.url)) return;
   t.autoscroll = !!on;
-  t.view.webContents.send('byss:autoscroll', { on: t.autoscroll, cfg: asPayload() });
+  applyAutoscroll(t);
   sendState();
-  if (on) toast('Автоскролл: колесо мыши — пауза, кнопка в адресной строке — стоп');
+  if (!on) return;
+  const a = asCfg();
+  if (a.mode === 'wheel') toast('Автоскролл колесом: каждые ' + a.interval + ' с. Стоп — кнопка в адресной строке');
+  else toast('Автоскролл: колесо мыши — пауза, кнопка в адресной строке — стоп');
+}
+
+function ticksWord(n) {
+  const d = n % 10;
+  const dd = n % 100;
+  if (d === 1 && dd !== 11) return n + ' щелчок';
+  if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return n + ' щелчка';
+  return n + ' щелчков';
 }
 
 /** Соседнее значение из списка: dir = +1 / -1; null — дальше некуда. */
@@ -904,7 +960,8 @@ function autoscrollGroup(t, act) {
       label: 'Режим',
       options: [
         { id: act(() => setAsCfg({ mode: 'smooth' }), true), label: 'Плавно', on: a.mode === 'smooth' },
-        { id: act(() => setAsCfg({ mode: 'step' }), true), label: 'Шагами', on: a.mode === 'step' }
+        { id: act(() => setAsCfg({ mode: 'step' }), true), label: 'Шагами', on: a.mode === 'step' },
+        { id: act(() => setAsCfg({ mode: 'wheel' }), true), label: 'Колесом', on: a.mode === 'wheel' }
       ]
     }
   ];
@@ -921,9 +978,12 @@ function autoscrollGroup(t, act) {
   };
   if (a.mode === 'smooth') {
     children.push(stepper('Скорость', a.level, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], a.level, 'level', (v) => v + ' из 10'));
-  } else {
+  } else if (a.mode === 'step') {
     children.push(stepper('Интервал', a.interval, AS_INTERVALS, a.interval, 'interval', (v) => v + ' с'));
     children.push(stepper('Шаг', a.step, AS_STEPS, a.step, 'step', (v) => v + '% экрана'));
+  } else {
+    children.push(stepper('Интервал', a.interval, AS_INTERVALS, a.interval, 'interval', (v) => v + ' с'));
+    children.push(stepper('Колесо', a.ticks, AS_TICKS, a.ticks, 'ticks', ticksWord));
   }
   return {
     type: 'group',
@@ -2290,6 +2350,8 @@ function setupIpc() {
     const t = tabByWc(e.sender.id);
     if (!t || !t.autoscroll) return;
     t.autoscroll = false;
+    clearInterval(t.asTimer);
+    t.asTimer = null;
     sendState();
     if (t === activeTab()) toast('Автоскролл остановлен — конец страницы');
   });
