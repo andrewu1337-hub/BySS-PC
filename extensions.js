@@ -262,6 +262,12 @@ async function init(session, hooks) {
     return;
   }
   try {
+    // до библиотеки: её preload для страниц расширений иначе не срабатывает (см. preload-crx-fix.js)
+    try {
+      ses.registerPreloadScript({ id: 'byss-crx-fix', type: 'frame', filePath: path.join(__dirname, 'preload-crx-fix.js') });
+    } catch (e) {
+      console.error('extensions preload fix', e);
+    }
     ext = new ECE.ElectronChromeExtensions({
       session: ses,
       createTab: async (details) => {

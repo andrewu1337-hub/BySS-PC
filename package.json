@@ -35,6 +35,7 @@
       "preload-page.js",
       "preload-bubble.js",
       "preload-menu.js",
+      "preload-crx-fix.js",
       "translate-page.js",
       "yt.js",
       "ui/**",
