@@ -362,8 +362,14 @@ function activeTab() {
   return tabs.find((t) => t.id === activeId) || null;
 }
 
+/** У вкладки есть живая страница. После закрытия view.webContents может быть уже пустым. */
+function live(t) {
+  const wc = t && t.view && t.view.webContents;
+  return !!wc && !wc.isDestroyed();
+}
+
 function tabByWc(id) {
-  return tabs.find((t) => t.view && !t.view.webContents.isDestroyed() && t.view.webContents.id === id) || null;
+  return tabs.find((t) => live(t) && t.view.webContents.id === id) || null;
 }
 
 function modeName(mode) {
@@ -686,7 +692,7 @@ function snapshot() {
       canFwd: wc ? canGo(wc, false) : false,
       loading: t ? t.loading : false,
       blocked: t ? t.blocked : 0,
-      extTab: EXT.ready() && t && !t.mode && t.view && !t.view.webContents.isDestroyed() ? t.view.webContents.id : 0,
+      extTab: EXT.ready() && t && !t.mode && live(t) ? t.view.webContents.id : 0,
       allowed: site && !!store.get('allowSites')[baseDomain(hostOf(url))],
       adblock: !!store.get('adblock'),
       translated: t ? t.translated : false,
@@ -905,7 +911,7 @@ function setAsCfg(patch) {
 function applyAutoscroll(t) {
   clearInterval(t.asTimer);
   t.asTimer = null;
-  if (!t.view || t.view.webContents.isDestroyed()) return;
+  if (!live(t)) return;
   const wc = t.view.webContents;
   const a = asCfg();
   if (t.autoscroll && a.mode === 'wheel') {
@@ -918,7 +924,7 @@ function applyAutoscroll(t) {
 
 /** Один «щелчок» колёсика (или несколько) посреди страницы — как будто крутит пользователь. */
 function wheelTick(t) {
-  if (!t.autoscroll || !t.view || t.view.webContents.isDestroyed() || !tabs.includes(t)) {
+  if (!t.autoscroll || !live(t) || !tabs.includes(t)) {
     clearInterval(t.asTimer);
     t.asTimer = null;
     return;
@@ -943,7 +949,7 @@ function wheelTick(t) {
 }
 
 function setAutoscroll(t, on) {
-  if (!t || !t.view || t.view.webContents.isDestroyed()) return;
+  if (!live(t)) return;
   if (on && !/^https?:/.test(t.url)) return;
   t.autoscroll = !!on;
   applyAutoscroll(t);
@@ -1125,7 +1131,7 @@ function hideMenu() {
     // уже убрано
   }
   const t = activeTab();
-  if (t && t.view && !t.view.webContents.isDestroyed()) t.view.webContents.focus();
+  if (live(t)) t.view.webContents.focus();
 }
 
 const ENGINE_NAMES = { google: 'Google', yandex: 'Яндекс', ddg: 'DuckDuckGo', bing: 'Bing' };
@@ -1277,7 +1283,7 @@ function applyTheme() {
 
 function broadcastSettings() {
   for (const t of tabs) {
-    if (t.view && !t.view.webContents.isDestroyed() && t.url.startsWith('byss:')) {
+    if (live(t) && t.url.startsWith('byss:')) {
       t.view.webContents.send('page:settings', settingsForPage(t));
     }
   }
@@ -1464,7 +1470,7 @@ function stopTranslate(t, restore) {
   if (!t) return;
   t.translated = false;
   t.trRun = null;
-  if (restore && t.view && !t.view.webContents.isDestroyed()) {
+  if (restore && live(t)) {
     inWorld(t.view.webContents, 'window.__byssTr ? window.__byssTr.restore() : true').catch(() => {});
   }
   sendState();
@@ -1735,7 +1741,7 @@ function pushDownloads() {
   dlPushTimer = setTimeout(() => {
     const list = downloadsForPage();
     for (const t of tabs) {
-      if (t.view && !t.view.webContents.isDestroyed() && t.url.startsWith(DOWNLOADS)) {
+      if (live(t) && t.url.startsWith(DOWNLOADS)) {
         t.view.webContents.send('page:downloads', list);
       }
     }
@@ -2670,10 +2676,13 @@ function startExtensions() {
       return t.view.webContents;
     },
     selectTab: (wc) => {
+      if (!wc || wc.isDestroyed()) return;
       const t = tabByWc(wc.id);
       if (t) activate(t.id);
     },
+    // зовётся и когда страница вкладки уже закрыта (вкладку закрыли или усыпили) — тогда ничего не делаем
     removeTab: (wc) => {
+      if (!wc || wc.isDestroyed()) return;
       const t = tabByWc(wc.id);
       if (t) closeTab(t.id);
     },
@@ -2683,13 +2692,33 @@ function startExtensions() {
       sendState();
       const list = EXT.list();
       for (const t of tabs) {
-        if (t.view && !t.view.webContents.isDestroyed() && t.url.startsWith(EXTENSIONS)) {
+        if (live(t) && t.url.startsWith(EXTENSIONS)) {
           t.view.webContents.send('page:ext', list);
         }
       }
     }
   }).catch(() => {});
 }
+
+// Ошибка в коде браузера не должна замораживать его окном «A JavaScript error occurred»:
+// записываем её в файл и работаем дальше.
+function logError(kind, err) {
+  try {
+    const f = path.join(app.getPath('userData'), 'errors.log');
+    try {
+      if (fs.statSync(f).size > 256 * 1024) fs.rmSync(f, { force: true });
+    } catch (e) {
+      // файла ещё нет
+    }
+    fs.appendFileSync(f, new Date().toISOString() + ' ' + kind + ' ' + app.getVersion() + '\n'
+      + String((err && err.stack) || err) + '\n\n');
+  } catch (e) {
+    // ignore
+  }
+  console.error(kind, err);
+}
+process.on('uncaughtException', (err) => logError('uncaughtException', err));
+process.on('unhandledRejection', (err) => logError('unhandledRejection', err));
 
 if (process.platform === 'win32') app.setAppUserModelId('app.byss.desktop');
 

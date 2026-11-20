@@ -269,8 +269,21 @@ async function init(session, hooks) {
         if (!wc) throw new Error('Не удалось открыть вкладку');
         return [wc, H.win()];
       },
-      selectTab: (wc) => H.selectTab(wc),
-      removeTab: (wc) => H.removeTab(wc),
+      // библиотека зовёт их и из событий страниц: ошибка здесь не должна уронить браузер
+      selectTab: (wc) => {
+        try {
+          H.selectTab(wc);
+        } catch (e) {
+          console.error('extensions selectTab', e);
+        }
+      },
+      removeTab: (wc) => {
+        try {
+          H.removeTab(wc);
+        } catch (e) {
+          console.error('extensions removeTab', e);
+        }
+      },
       createWindow: async (details) => {
         const url = details && (Array.isArray(details.url) ? details.url[0] : details.url);
         H.createTab(url, true);
