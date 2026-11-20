@@ -2308,18 +2308,25 @@ function setupIpc() {
   // YouTube: реклама в видео идёт с тех же серверов, что и само видео, поэтому её не отрезать
   // по адресу. Скрипт (yt.js) убирает её из ответов плеера ещё до запуска страницы.
   // Ответ: null — рекламу на YouTube не трогаем (блокировка выключена или сайт разрешён).
+  // Ответ отправляется в момент присваивания e.returnValue — поэтому присваиваем один раз, в конце.
   ipcMain.on('site:yt', (e, host) => {
-    e.returnValue = null;
+    let reply = null;
     try {
-      if (!tabByWc(e.sender.id) || !/(^|\.)youtube\.com$/i.test(String(host || ''))) return;
-      if (!store.get('adblock') || store.get('allowSites')['youtube.com']) return;
-      if (YT_JS === null) {
-        try { YT_JS = fs.readFileSync(path.join(__dirname, 'yt.js'), 'utf8'); } catch (err) { YT_JS = ''; }
+      if (tabByWc(e.sender.id) && /(^|\.)youtube\.com$/i.test(String(host || ''))
+        && store.get('adblock') && !store.get('allowSites')['youtube.com']) {
+        if (YT_JS === null) {
+          try {
+            YT_JS = fs.readFileSync(path.join(__dirname, 'yt.js'), 'utf8');
+          } catch (err) {
+            YT_JS = '';
+          }
+        }
+        reply = { code: YT_JS || '' };
       }
-      e.returnValue = { code: YT_JS || '' };
     } catch (err) {
-      e.returnValue = null;
+      reply = null;
     }
+    e.returnValue = reply;
   });
 
   ipcMain.on('ui:ready', (e) => {
