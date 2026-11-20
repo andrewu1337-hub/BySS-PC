@@ -48,10 +48,10 @@ let fullscreenTab = null;
 const closed = [];
 const isMac = process.platform === 'darwin';
 
-// значок: тот же лев, что и на Android, без фона. Для Windows — .ico, где каждый размер
+// значок: тот же лев на щите, что и на Android; вокруг щита — прозрачно. Для Windows — .ico, где каждый размер
 // (16…256) нарисован отдельно, поэтому на панели задач он чёткий, а не смазанный
 let YT_JS = null;
-const ICON = path.join(__dirname, 'assets', process.platform === 'win32' ? 'byss.ico' : 'lion-big.png');
+const ICON = path.join(__dirname, 'assets', process.platform === 'win32' ? 'byss-shield.ico' : 'lion-big.png');
 
 const COLORS = {
   dark: { bg: '#000000', text: '#FFFFFF' },

@@ -48,7 +48,7 @@
         }
       ],
       "artifactName": "BySS-Setup.${ext}",
-      "icon": "assets/byss.ico"
+      "icon": "assets/byss-shield.ico"
     },
     "nsis": {
       "oneClick": false,
