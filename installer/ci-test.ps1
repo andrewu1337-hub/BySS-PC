@@ -167,7 +167,9 @@ if (Test-Path $ff) {
   $pidsBefore = @(Get-Process firefox -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
   $before = (Get-Content -LiteralPath $log -ErrorAction SilentlyContinue).Count
   $t1 = Get-Date
-  $u = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+  # ждём только сам установщик: -Wait ждал бы и BySS, который он открывает в конце
+  $u = Start-Process -FilePath $setup -ArgumentList '/S' -PassThru
+  if (-not $u.WaitForExit(180000)) { Note 'update: installer still running after 180 s' }
   Note ('update exit code: ' + $u.ExitCode + ', took ' + [int]((Get-Date) - $t1).TotalSeconds + ' s')
   Get-Content -LiteralPath $log -ErrorAction SilentlyContinue | Select-Object -Skip $before | ForEach-Object { Note $_ }
   Start-Sleep -Seconds 25
