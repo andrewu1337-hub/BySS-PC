@@ -1,0 +1,35 @@
+/* BySS — оформление окна Firefox. Цвета задаёт тема BySS (тёмная или светлая), здесь — форма. */
+
+/* вкладки — скруглённые «таблетки», как в BySS */
+:root {
+  --tab-border-radius: 10px !important;
+  --toolbarbutton-border-radius: 10px !important;
+  --arrowpanel-border-radius: 14px !important;
+  --panel-border-radius: 14px !important;
+}
+.tab-background {
+  border-radius: 10px !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.tab-close-button { border-radius: 7px !important; }
+.tabbrowser-tab:not([selected]):hover .tab-background { background-color: rgba(127, 127, 127, .14) !important; }
+
+/* адресная строка — тоже «таблетка», без рамки */
+#urlbar-background {
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+#urlbar:not([focused]) > #urlbar-background { border-color: transparent !important; }
+#searchbar { border-radius: 12px !important; }
+
+/* меньше лишнего на панели */
+#firefox-view-button,
+#alltabs-button,
+#fxa-toolbar-menu-button,
+#save-to-pocket-button { display: none !important; }
+#nav-bar {
+  box-shadow: none !important;
+  border-top: none !important;
+}
+#navigator-toolbox { border-bottom: none !important; }

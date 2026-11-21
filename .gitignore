@@ -1,4 +1,3 @@
-node_modules/
-dist/
-pages/shared/fonts/
+out/
+ext/shared/fonts/
 *.log
