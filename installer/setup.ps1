@@ -2,7 +2,7 @@
 #   firefox   — скачать Firefox ESR у Mozilla, проверить подпись Mozilla и распаковать в папку BySS;
 #   configure — политики Firefox (без истории, uBlock Origin, BySS), профиль, значок окна, перенос настроек старого BySS;
 #   oldapp    — убрать старый BySS (Electron), если он установлен; его настройки уже перенесены;
-#   shortcuts — значок и имя BySS на панели задач (а не Firefox).
+#   shortcuts — значок и имя BySS на панели задач и в списке браузеров Windows (а не Firefox).
 # Пишет журнал в %TEMP%\byss-setup.log. Код выхода 0 — успех.
 param(
   [Parameter(Mandatory = $true)][string]$Step,
@@ -264,6 +264,11 @@ namespace BySSSetup {
   class PropVar { [FieldOffset(0)] public ushort vt; [FieldOffset(8)] public IntPtr ptr; }
 
   public static class Aumid {
+    [DllImport("shell32.dll")]
+    static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+    /// <summary>Сообщить Windows, что поменялись программы по умолчанию.</summary>
+    public static void Notify() { SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero); }
+
     public static void Set(string lnk, string id) {
       object link = new ShellLinkObject();
       try {
@@ -290,6 +295,85 @@ namespace BySSSetup {
 }
 '@
 
+# ---------------------------------------------------------------- BySS в списке браузеров Windows
+
+# «Приложения по умолчанию» показывают браузеры из RegisteredApplications — с их именем и значком.
+# Записываем BySS (через BySS.exe, со значком BySS) и убираем записи «Firefox», которые Firefox мог
+# сделать для своей копии в папке BySS (настоящий Firefox, если он установлен, не трогаем).
+function RegSet([string]$sub, [string]$name, [string]$value) {
+  $k = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($sub)
+  try { $k.SetValue($name, $value, [Microsoft.Win32.RegistryValueKind]::String) } finally { $k.Close() }
+}
+
+function RegDefault([string]$sub) {
+  $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($sub)
+  if (-not $k) { return '' }
+  try { return [string]$k.GetValue('') } finally { $k.Close() }
+}
+
+function Register-Browser {
+  $exe = Join-Path $InstallDir 'BySS.exe'
+  if (-not (Test-Path -LiteralPath $exe)) { Log 'no BySS.exe, browser not registered'; return }
+  $icon = '"' + (Join-Path $InstallDir 'byss.ico') + '",0'
+  $open = '"' + $exe + '" -osint -url "%1"'
+  $desc = 'Браузер BySS: главная с погодой и валютами, блокировка рекламы, без истории'
+  foreach ($cls in @(@('BySSURL', 'Ссылка BySS'), @('BySSHTML', 'Страница BySS'))) {
+    $c = 'Software\Classes\' + $cls[0]
+    RegSet $c '' $cls[1]
+    RegSet $c 'FriendlyTypeName' $cls[1]
+    if ($cls[0] -eq 'BySSURL') { RegSet $c 'URL Protocol' '' }
+    RegSet ($c + '\DefaultIcon') '' $icon
+    RegSet ($c + '\Application') 'ApplicationName' 'BySS'
+    RegSet ($c + '\Application') 'ApplicationIcon' $icon
+    RegSet ($c + '\Application') 'ApplicationDescription' $desc
+    RegSet ($c + '\Application') 'ApplicationCompany' 'BySS'
+    RegSet ($c + '\Application') 'AppUserModelID' $AppId
+    RegSet ($c + '\shell\open\command') '' $open
+  }
+  $b = 'Software\Clients\StartMenuInternet\BySS'
+  RegSet $b '' 'BySS'
+  RegSet ($b + '\DefaultIcon') '' $icon
+  RegSet ($b + '\shell\open\command') '' ('"' + $exe + '"')
+  RegSet ($b + '\Capabilities') 'ApplicationName' 'BySS'
+  RegSet ($b + '\Capabilities') 'ApplicationIcon' $icon
+  RegSet ($b + '\Capabilities') 'ApplicationDescription' $desc
+  RegSet ($b + '\Capabilities\StartMenu') 'StartMenuInternet' 'BySS'
+  foreach ($p in @('http', 'https')) { RegSet ($b + '\Capabilities\URLAssociations') $p 'BySSURL' }
+  foreach ($e in @('.htm', '.html', '.shtml', '.xht', '.xhtml')) { RegSet ($b + '\Capabilities\FileAssociations') $e 'BySSHTML' }
+  RegSet 'Software\RegisteredApplications' 'BySS' ($b + '\Capabilities')
+  Log 'browser registered as BySS'
+
+  # записи «Firefox» для копии Firefox в папке BySS
+  $ours = (Join-Path $InstallDir 'firefox').TrimEnd('\') + '\'
+  $mine = { param([string]$cmd) $cmd -and $cmd.IndexOf($ours, [StringComparison]::OrdinalIgnoreCase) -ge 0 }
+  $smi = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Clients\StartMenuInternet', $true)
+  if ($smi) {
+    try {
+      foreach ($n in $smi.GetSubKeyNames()) {
+        if ($n -eq 'BySS') { continue }
+        if (& $mine (RegDefault ('Software\Clients\StartMenuInternet\' + $n + '\shell\open\command'))) {
+          $smi.DeleteSubKeyTree($n, $false)
+          $ra = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\RegisteredApplications', $true)
+          if ($ra) { try { foreach ($v in $ra.GetValueNames()) { if ([string]$ra.GetValue($v) -like ('*\' + $n + '\Capabilities')) { $ra.DeleteValue($v, $false) } } } finally { $ra.Close() } }
+          Log ('removed Firefox registration ' + $n)
+        }
+      }
+    } finally { $smi.Close() }
+  }
+  $classes = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes', $true)
+  if ($classes) {
+    try {
+      foreach ($n in $classes.GetSubKeyNames()) {
+        if ($n -notlike 'Firefox*-*') { continue }
+        if (& $mine (RegDefault ('Software\Classes\' + $n + '\shell\open\command'))) {
+          $classes.DeleteSubKeyTree($n, $false)
+          Log ('removed Firefox class ' + $n)
+        }
+      }
+    } finally { $classes.Close() }
+  }
+}
+
 function Step-Shortcuts {
   $ffDir = (Join-Path $InstallDir 'firefox').TrimEnd('\')
   $key = 'HKCU:\Software\Mozilla\Firefox\TaskBarIDs'
@@ -313,6 +397,12 @@ function Step-Shortcuts {
       Log ('app id failed for ' + $l + ': ' + $_.Exception.Message)
     }
   }
+  try {
+    Register-Browser
+  } catch {
+    Log ('browser registration failed: ' + $_.Exception.Message)
+  }
+  try { [BySSSetup.Aumid]::Notify() } catch { }
 }
 
 # ---------------------------------------------------------------- запуск шага

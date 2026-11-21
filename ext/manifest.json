@@ -34,6 +34,7 @@
     "browsingData",
     "downloads",
     "downloads.open",
+    "menus",
     "<all_urls>"
   ],
   "chrome_url_overrides": {
@@ -47,6 +48,22 @@
     "default_title": "BySS",
     "default_popup": "popup/index.html",
     "default_area": "navbar"
+  },
+  "page_action": {
+    "default_icon": {
+      "16": "icons/translate.svg",
+      "32": "icons/translate.svg"
+    },
+    "default_title": "Перевести страницу на русский",
+    "show_matches": [
+      "http://*/*",
+      "https://*/*"
+    ],
+    "hide_matches": [
+      "*://translate.google.com/*",
+      "*://*.translate.google.com/*"
+    ],
+    "pinned": true
   },
   "options_ui": {
     "page": "settings/index.html",

@@ -101,7 +101,8 @@ function look(box) {
   const g2 = el('div', 'group');
   g2.appendChild(row('Фон главной', 'Или поставьте свою картинку', null));
   const walls = el('div', 'walls');
-  for (const [id, label] of [['lines', 'Линии'], ['waves', 'Волны'], ['dots', 'Точки'], ['black', 'Просто чёрный'], ['custom', 'Своя картинка…']]) {
+  for (const [id, label] of [['lines', 'Линии'], ['waves', 'Волны'], ['dots', 'Точки'], ['night', 'Ночь'], ['aurora', 'Сияние'],
+    ['graphite', 'Графит'], ['black', 'Просто чёрный'], ['custom', 'Своя картинка…']]) {
     const w = el('div', 'wall ' + id + (S.wallpaper === id ? ' on' : ''), label);
     if (id === 'custom' && S.wallpaperUrl) w.style.backgroundImage = 'url("' + S.wallpaperUrl + '")';
     w.onclick = async () => {

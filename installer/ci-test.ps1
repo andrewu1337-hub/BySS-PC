@@ -1,4 +1,4 @@
-# Проверка установщика на чистой Windows в GitHub Actions: ставим BySS «с нуля» поверх настроек
+﻿# Проверка установщика на чистой Windows в GitHub Actions: ставим BySS «с нуля» поверх настроек
 # «старого BySS», запускаем, снимаем экран. Снимки и журнал кладутся в папку shots.
 $ErrorActionPreference = 'Stop'
 $out = Join-Path $PWD 'shots'
@@ -49,6 +49,8 @@ $checks = [ordered]@{
   'user.js' = (Test-Path (Join-Path $prof 'user.js'))
   'userChrome.css' = (Test-Path (Join-Path $prof 'chrome\userChrome.css'))
   'desktop shortcut' = (Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'BySS.lnk'))
+  'BySS.exe' = (Test-Path (Join-Path $dir 'BySS.exe'))
+  'browser registered' = ($null -ne (Get-ItemProperty -LiteralPath 'HKCU:\Software\RegisteredApplications' -Name 'BySS' -ErrorAction SilentlyContinue))
   'uninstaller' = (Test-Path (Join-Path $dir 'Uninstall BySS.exe'))
 }
 $bad = 0
@@ -72,13 +74,59 @@ try {
 } catch {
   Note 'taskbar id: none'
 }
+try {
+  Note ('url handler: ' + (Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\BySSURL\shell\open\command' -ErrorAction Stop).'(default)')
+  Note ('browser name: ' + (Get-ItemProperty -LiteralPath 'HKCU:\Software\Clients\StartMenuInternet\BySS\Capabilities' -ErrorAction Stop).ApplicationName)
+} catch {
+  Note 'url handler: none'
+}
 if ($bad -gt 0) { Note ('FAILED checks: ' + $bad) }
+
+# навести мышь на кнопку BySS на панели задач — снимок подсказки (значок и имя окна)
+function Hover-Taskbar {
+  try {
+    Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+    Add-Type 'using System.Runtime.InteropServices; public static class ByssCur { [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); }'
+    $A = [System.Windows.Automation.AutomationElement]
+    $tray = $A::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children,
+      (New-Object System.Windows.Automation.PropertyCondition($A::ClassNameProperty, 'Shell_TrayWnd')))
+    if (-not $tray) { Note 'taskbar: not found'; return }
+    $all = $tray.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    $names = @()
+    $hit = $null
+    foreach ($e in $all) {
+      $n = [string]$e.Current.Name
+      if (-not $n) { continue }
+      $names += $n
+      if (-not $hit -and $n -match 'BySS|Firefox|Mozilla' -and $e.Current.BoundingRectangle.Width -gt 0) { $hit = $e }
+    }
+    Note ('taskbar items: ' + ($names -join ' | '))
+    if (-not $hit) { return }
+    $r = $hit.Current.BoundingRectangle
+    [ByssCur]::SetCursorPos([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) | Out-Null
+    Start-Sleep -Seconds 3
+    Shot '1b-hover'
+    [ByssCur]::SetCursorPos(400, 300) | Out-Null
+    Start-Sleep -Seconds 1
+  } catch {
+    Note ('hover failed: ' + $_.Exception.Message)
+  }
+}
 
 if (Test-Path $ff) {
   $base = @('-profile', ('"' + $prof + '"'))
-  Start-Process -FilePath $ff -ArgumentList $base
+  # первый запуск — как с ярлыка, через BySS.exe
+  $launcher = Join-Path $dir 'BySS.exe'
+  if (Test-Path $launcher) { Start-Process -FilePath $launcher } else { Start-Process -FilePath $ff -ArgumentList $base }
   Start-Sleep -Seconds 40
   Shot '1-start'
+  Hover-Taskbar
+  if (Test-Path $launcher) {
+    # ссылка из другой программы (так её откроет Windows, когда BySS — браузер по умолчанию)
+    Start-Process -FilePath $launcher -ArgumentList @('-osint', '-url', '"https://example.com/"')
+    Start-Sleep -Seconds 8
+    Shot '1c-link'
+  }
   foreach ($pg in @(
       @('2-newtab', 'about:newtab', 6),
       @('3-policies', 'about:policies', 6),

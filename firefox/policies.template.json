@@ -97,7 +97,10 @@
       "browser.promo.focus.enabled": { "Value": false, "Status": "default" },
       "browser.ml.chat.enabled": { "Value": false, "Status": "default" },
       "extensions.update.interval": { "Value": 21600, "Status": "default" },
-      "general.autoScroll": { "Value": true, "Status": "default" }
+      "general.autoScroll": { "Value": true, "Status": "default" },
+      "browser.taskbar.lists.enabled": { "Value": false, "Status": "locked" },
+      "browser.privateWindowSeparation.enabled": { "Value": false, "Status": "locked" },
+      "browser.privacySegmentation.createdShortcut": { "Value": true, "Status": "default" }
     },
     "3rdparty": {
       "Extensions": {

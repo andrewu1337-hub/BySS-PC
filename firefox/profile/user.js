@@ -35,3 +35,12 @@ user_pref("browser.compactmode.show", true);
 user_pref("general.autoScroll", true);
 user_pref("browser.translations.automaticallyPopup", true);
 user_pref("extensions.update.interval", 21600);
+
+// значок и имя BySS на панели задач Windows: без списка переходов Firefox (его пункты открывали Firefox
+// со значком Firefox) и без отдельного значка Firefox для приватных окон
+user_pref("browser.taskbar.lists.enabled", false);
+user_pref("browser.taskbar.lists.frequent.enabled", false);
+user_pref("browser.taskbar.lists.recent.enabled", false);
+user_pref("browser.taskbar.lists.tasks.enabled", false);
+user_pref("browser.privateWindowSeparation.enabled", false);
+user_pref("browser.privacySegmentation.createdShortcut", true);

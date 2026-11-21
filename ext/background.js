@@ -305,6 +305,11 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return fromExt ? setAutoscroll(Number(msg.tabId), !!msg.on) : undefined;
     case 'install-info':
       return fromExt ? installInfo() : undefined;
+    case 'shot':
+      return fromExt ? screenshot(Number(msg.tabId), !!msg.full) : undefined;
+    case 'translate':
+      if (!fromExt) return undefined;
+      return browser.tabs.get(Number(msg.tabId)).then(translateTab).catch(() => {});
     default:
       return undefined;
   }
@@ -316,6 +321,91 @@ browser.storage.onChanged.addListener((ch, area) => {
   const old = ch.settings.oldValue || {};
   if (s.theme !== old.theme) applyTheme(s);
   if (JSON.stringify(s.autoscroll) !== JSON.stringify(old.autoscroll)) reapplyAutoscroll();
+});
+
+// ---------------------------------------------------------------- скриншот
+
+/** Снимок вкладки (видимая часть или вся страница) — в папку загрузок, как PNG. */
+async function screenshot(tabId, full) {
+  try {
+    let opts = { format: 'png' };
+    if (full) {
+      const [d] = await browser.tabs.executeScript(tabId, {
+        code: '({ w: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, innerWidth),'
+          + ' h: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0, innerHeight),'
+          + ' r: devicePixelRatio || 1 })'
+      });
+      const w = Math.min(d.w, 8000);
+      const h = Math.min(d.h, 30000);
+      const scale = Math.max(0.25, Math.min(d.r, 16000 / h, 8000 / w));
+      opts = { format: 'png', rect: { x: 0, y: 0, width: w, height: h }, scale };
+    }
+    const data = await browser.tabs.captureTab(tabId, opts);
+    const blob = await (await fetch(data)).blob();
+    const url = URL.createObjectURL(blob);
+    const p = (n) => String(n).padStart(2, '0');
+    const t = new Date();
+    const name = 'BySS ' + t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate()) + ' '
+      + p(t.getHours()) + '-' + p(t.getMinutes()) + '-' + p(t.getSeconds()) + '.png';
+    await browser.downloads.download({ url, filename: name, saveAs: false });
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false };
+  }
+}
+
+// ---------------------------------------------------------------- перевод страницы
+
+/* Кнопка «Перевести» рядом со значком BySS (в конце адресной строки) и пункт в меню страницы.
+   Страница открывается в Переводчике Google на русском; на переведённой — возврат к оригиналу. */
+const TR_HOST = '.translate.goog';
+
+/** Адрес оригинала для переведённой страницы (www-example-com.translate.goog → www.example.com). */
+function originalOf(url) {
+  try {
+    const u = new URL(url);
+    if (!u.hostname.endsWith(TR_HOST)) return null;
+    const label = u.hostname.slice(0, -TR_HOST.length);
+    u.hostname = label.replace(/--/g, '\u0000').replace(/-/g, '.').replace(/\u0000/g, '-');
+    for (const k of [...u.searchParams.keys()]) if (k.startsWith('_x_tr_')) u.searchParams.delete(k);
+    return u.toString();
+  } catch (e) {
+    return null;
+  }
+}
+
+function translateTab(tab) {
+  if (!tab || !/^https?:/.test(tab.url || '')) return;
+  const back = originalOf(tab.url);
+  const url = back || 'https://translate.google.com/translate?sl=auto&tl=ru&hl=ru&u=' + encodeURIComponent(tab.url);
+  browser.tabs.update(tab.id, { url }).catch(() => {});
+}
+
+browser.pageAction.onClicked.addListener((tab) => translateTab(tab));
+browser.tabs.onUpdated.addListener((tabId, info) => {
+  if (!info.url) return;
+  const t = originalOf(info.url) ? 'Показать оригинал' : 'Перевести страницу на русский';
+  try {
+    browser.pageAction.setTitle({ tabId, title: t });
+  } catch (e) {
+    // вкладка уже закрыта
+  }
+});
+
+browser.menus.create({
+  id: 'byss-translate',
+  title: 'Перевести страницу',
+  contexts: ['page'],
+  documentUrlPatterns: ['http://*/*', 'https://*/*']
+}, () => void browser.runtime.lastError);
+browser.menus.onShown.addListener((info, tab) => {
+  if (!info.menuIds.includes('byss-translate')) return;
+  const title = tab && originalOf(tab.url || '') ? 'Показать оригинал' : 'Перевести страницу';
+  browser.menus.update('byss-translate', { title }).then(() => browser.menus.refresh()).catch(() => {});
+});
+browser.menus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'byss-translate') translateTab(tab);
 });
 
 // ---------------------------------------------------------------- постоянный адрес страниц BySS
@@ -339,10 +429,18 @@ browser.tabs.query({}).then((tabs) => {
 
 /* При первом запуске Firefox открывает главную раньше, чем успевает включиться BySS, —
    такая вкладка остаётся пустой. После установки или обновления BySS перезагружаем её. */
-browser.runtime.onInstalled.addListener(() => {
+browser.runtime.onInstalled.addListener((details) => {
+  const home = OWN_BASE + 'home/index.html';
   browser.tabs.query({}).then((tabs) => {
     for (const t of tabs) {
-      if (typeof t.url === 'string' && t.url.startsWith(OWN_BASE + 'home/')) browser.tabs.reload(t.id).catch(() => {});
+      const url = typeof t.url === 'string' ? t.url : '';
+      const title = typeof t.title === 'string' ? t.title : '';
+      // не загрузившаяся главная: у вкладки пустой адрес, а в заголовке — адрес BySS
+      const failed = url === 'about:blank' && (title.includes('a90f5681') || title.startsWith('moz-extension'));
+      if (url.startsWith(OWN_BASE + 'home/')) browser.tabs.reload(t.id).catch(() => {});
+      else if (failed || (details.reason === 'install' && url === 'about:blank' && tabs.length === 1)) {
+        browser.tabs.update(t.id, { url: home }).catch(() => {});
+      }
     }
   }).catch(() => {});
 });

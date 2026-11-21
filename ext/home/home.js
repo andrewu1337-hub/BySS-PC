@@ -76,7 +76,7 @@ function renderGrid() {
   add.style.display = (S.shortcuts || []).length >= 18 ? 'none' : '';
   add.onclick = (e) => {
     heart(e.currentTarget);
-    edit(-1);
+    setTimeout(() => edit(-1), 320); // сначала сердечко, потом окно
   };
 }
 

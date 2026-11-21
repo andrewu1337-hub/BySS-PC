@@ -7,19 +7,7 @@
 </head>
 <body>
 <div id="top"><div id="brand"></div><div id="ver"></div></div>
-<div id="as" class="group"></div>
-<div class="group">
-  <button class="item" id="private"><span class="ic" data-i="incognito"></span><span class="n">Приватное окно</span><span class="k">Ctrl+Shift+P</span></button>
-  <button class="item" id="home"><span class="ic" data-i="home"></span><span class="n">Главная</span><span class="k"></span></button>
-  <button class="item" id="settings"><span class="ic" data-i="settings"></span><span class="n">Настройки BySS</span><span class="k"></span></button>
-</div>
-<div class="group">
-  <button class="item" id="update"><span class="ic" data-i="download"></span><span class="n">Проверить обновления</span><span class="k"></span></button>
-  <div id="updmsg" class="msg" hidden></div>
-  <button class="item danger" id="clear"><span class="ic" data-i="trash"></span><span class="n">Удалить все данные</span><span class="k"></span></button>
-  <div id="clearask" class="msg" hidden>Выйдете из всех сайтов, удалятся куки и кэш. Настройки BySS останутся.
-    <div class="row2"><button class="btn" id="clearno">Отмена</button><button class="btn danger" id="clearyes">Удалить</button></div></div>
-</div>
+<div id="panel" role="menu"></div>
 <script src="../shared/defaults.js"></script>
 <script src="../shared/api.js"></script>
 <script src="../shared/update.js"></script>

@@ -82,7 +82,7 @@ Function SkipIfUpdating
 FunctionEnd
 
 Function LaunchBySS
-  Exec '"$INSTDIR\firefox\firefox.exe" -profile "$ProfileDir"'
+  Exec '"$INSTDIR\BySS.exe"'
 FunctionEnd
 
 Function Fail
@@ -95,6 +95,7 @@ Section "BySS" SecMain
   SetOutPath "$INSTDIR"
   File "byss.ico"
   File "byss.xpi"
+  File "BySS.exe"
 
   InitPluginsDir
   SetOutPath "$PLUGINSDIR\payload"
@@ -126,9 +127,11 @@ Section "BySS" SecMain
   Pop $0
 
   DetailPrint "Создаю ярлыки…"
-  CreateShortCut "$DESKTOP\BySS.lnk" "$INSTDIR\firefox\firefox.exe" '-profile "$ProfileDir"' "$INSTDIR\byss.ico" 0 SW_SHOWNORMAL "" "BySS"
-  CreateShortCut "$SMPROGRAMS\BySS.lnk" "$INSTDIR\firefox\firefox.exe" '-profile "$ProfileDir"' "$INSTDIR\byss.ico" 0 SW_SHOWNORMAL "" "BySS"
-  ; свой значок и имя BySS на панели задач (а не Firefox)
+  ; ярлыки запускают BySS.exe: он открывает Firefox с профилем BySS
+  CreateShortCut "$DESKTOP\BySS.lnk" "$INSTDIR\BySS.exe" "" "$INSTDIR\byss.ico" 0 SW_SHOWNORMAL "" "BySS"
+  CreateShortCut "$SMPROGRAMS\BySS.lnk" "$INSTDIR\BySS.exe" "" "$INSTDIR\byss.ico" 0 SW_SHOWNORMAL "" "BySS"
+  ; свой значок и имя BySS на панели задач и в списке браузеров Windows (а не Firefox)
+  DetailPrint "Добавляю BySS в список браузеров Windows…"
   nsExec::Exec '${PS} -Step shortcuts -InstallDir "$INSTDIR" -Links "$DESKTOP\BySS.lnk|$SMPROGRAMS\BySS.lnk"'
   Pop $0
 
@@ -170,11 +173,18 @@ Section "Uninstall"
   RMDir /r "$INSTDIR\firefox"
   Delete "$INSTDIR\byss.xpi"
   Delete "$INSTDIR\byss.ico"
+  Delete "$INSTDIR\BySS.exe"
   Delete "$INSTDIR\byss-install.json"
   Delete "$INSTDIR\Uninstall BySS.exe"
   RMDir "$INSTDIR"
   DeleteRegKey HKCU "${UNKEY}"
   DeleteRegValue HKCU "Software\Mozilla\Firefox\TaskBarIDs" "$INSTDIR\firefox"
+  ; BySS в списке браузеров Windows
+  DeleteRegValue HKCU "Software\RegisteredApplications" "BySS"
+  DeleteRegKey HKCU "Software\Clients\StartMenuInternet\BySS"
+  DeleteRegKey HKCU "Software\Classes\BySSURL"
+  DeleteRegKey HKCU "Software\Classes\BySSHTML"
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
   IfSilent done
   MessageBox MB_YESNO|MB_ICONQUESTION "Удалить и данные BySS — входы на сайтах, пароли и настройки?" IDNO done
   RMDir /r "$ProfileDir"
