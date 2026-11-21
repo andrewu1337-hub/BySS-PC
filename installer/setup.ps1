@@ -173,6 +173,13 @@ function Step-Configure {
   $icoDir = Join-Path $ff 'browser\chrome\icons\default'
   New-Item -ItemType Directory -Force -Path $icoDir | Out-Null
   Copy-Item -LiteralPath (Join-Path $InstallDir 'byss.ico') -Destination (Join-Path $icoDir 'main-window.ico') -Force
+  # byss.cfg: значок окна BySS (в подсказке на панели задач) и сердечко на «+»
+  $prefDir = Join-Path $ff 'defaults\pref'
+  New-Item -ItemType Directory -Force -Path $prefDir | Out-Null
+  foreach ($f in @(@('byss.cfg', $ff), @('autoconfig.js', $prefDir))) {
+    $src = Join-Path $InstallDir $f[0]
+    if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination (Join-Path $f[1] $f[0]) -Force }
+  }
 
   # профиль BySS
   $chrome = Join-Path $ProfileDir 'chrome'
@@ -295,6 +302,25 @@ namespace BySSSetup {
 }
 '@
 
+# ---------------------------------------------------------------- закрыть BySS перед обновлением
+
+# Обновление: закрыть окна BySS по-хорошему (вкладки откроются снова), через 10 с — принудительно.
+# Трогаем только Firefox из папки BySS, не чужой.
+function Step-Close {
+  $ffDir = (Join-Path $InstallDir 'firefox').TrimEnd('\') + '\'
+  $mine = { @(Get-Process firefox -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($ffDir, [StringComparison]::OrdinalIgnoreCase) }) }
+  if ((& $mine).Count -eq 0) { Log 'BySS is not running'; return }
+  for ($i = 0; $i -lt 20; $i++) {
+    $left = & $mine
+    if ($left.Count -eq 0) { Log 'BySS closed'; return }
+    foreach ($p in $left) { try { if ($p.MainWindowHandle -ne 0) { $null = $p.CloseMainWindow() } } catch { } }
+    Start-Sleep -Milliseconds 500
+  }
+  & $mine | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 800
+  Log 'BySS closed by force'
+}
+
 # ---------------------------------------------------------------- BySS в списке браузеров Windows
 
 # «Приложения по умолчанию» показывают браузеры из RegisteredApplications — с их именем и значком.
@@ -414,6 +440,7 @@ try {
     'configure' { Step-Configure }
     'oldapp' { Step-OldApp }
     'shortcuts' { Step-Shortcuts }
+    'close' { Step-Close }
     default { throw ('unknown step ' + $Step) }
   }
   exit 0

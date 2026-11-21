@@ -43,6 +43,14 @@ Section
     CreateDirectory "$EXEDIR\firefox\browser\chrome\icons\default"
     CopyFiles /SILENT "$EXEDIR\byss.ico" "$EXEDIR\firefox\browser\chrome\icons\default\main-window.ico"
   ${EndIf}
+  ; значок окна и сердечко на «+» (byss.cfg) — после обновления Firefox вернуть, если пропали
+  ${IfNot} ${FileExists} "$EXEDIR\firefox\byss.cfg"
+    CopyFiles /SILENT "$EXEDIR\byss.cfg" "$EXEDIR\firefox\byss.cfg"
+  ${EndIf}
+  ${IfNot} ${FileExists} "$EXEDIR\firefox\defaults\pref\autoconfig.js"
+    CreateDirectory "$EXEDIR\firefox\defaults\pref"
+    CopyFiles /SILENT "$EXEDIR\autoconfig.js" "$EXEDIR\firefox\defaults\pref\autoconfig.js"
+  ${EndIf}
 
   ${GetParameters} $1
   StrCpy $2 $1 12

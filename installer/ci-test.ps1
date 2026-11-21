@@ -47,6 +47,8 @@ $checks = [ordered]@{
   'byss.xpi' = (Test-Path (Join-Path $dir 'byss.xpi'))
   'main-window.ico' = (Test-Path (Join-Path $dir 'firefox\browser\chrome\icons\default\main-window.ico'))
   'user.js' = (Test-Path (Join-Path $prof 'user.js'))
+  'byss.cfg' = (Test-Path (Join-Path $dir 'firefox\byss.cfg'))
+  'autoconfig.js' = (Test-Path (Join-Path $dir 'firefox\defaults\pref\autoconfig.js'))
   'userChrome.css' = (Test-Path (Join-Path $prof 'chrome\userChrome.css'))
   'desktop shortcut' = (Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'BySS.lnk'))
   'BySS.exe' = (Test-Path (Join-Path $dir 'BySS.exe'))
@@ -81,6 +83,27 @@ try {
   Note 'url handler: none'
 }
 if ($bad -gt 0) { Note ('FAILED checks: ' + $bad) }
+
+# значок окна Firefox (его Windows показывает в подсказке на панели задач) — в снимок window-icon.png
+function Save-WindowIcon([string]$name = 'window-icon') {
+  try {
+    Add-Type -AssemblyName System.Drawing
+    Add-Type 'using System; using System.Runtime.InteropServices; public static class ByssWin {
+      [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
+      [DllImport("user32.dll", EntryPoint = "GetClassLongPtrW")] public static extern IntPtr GetClassLongPtr(IntPtr h, int i); }'
+    $p = Get-Process firefox -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+    if (-not $p) { Note 'window icon: no window'; return }
+    $h = [ByssWin]::SendMessage($p.MainWindowHandle, 0x7F, [IntPtr]1, [IntPtr]0)
+    $src = 'window'
+    if ($h -eq [IntPtr]::Zero) { $h = [ByssWin]::GetClassLongPtr($p.MainWindowHandle, -14); $src = 'class (firefox.exe)' }
+    if ($h -eq [IntPtr]::Zero) { Note 'window icon: none'; return }
+    $bmp = [System.Drawing.Icon]::FromHandle($h).ToBitmap()
+    $bmp.Save((Join-Path $out ($name + '.png')), [System.Drawing.Imaging.ImageFormat]::Png)
+    Note ($name + ': from ' + $src)
+  } catch {
+    Note ('window icon failed: ' + $_.Exception.Message)
+  }
+}
 
 # навести мышь на кнопку BySS на панели задач — снимок подсказки (значок и имя окна)
 function Hover-Taskbar {
@@ -121,6 +144,7 @@ if (Test-Path $ff) {
   Start-Sleep -Seconds 40
   Shot '1-start'
   Hover-Taskbar
+  Save-WindowIcon
   if (Test-Path $launcher) {
     # ссылка из другой программы (так её откроет Windows, когда BySS — браузер по умолчанию)
     Start-Process -FilePath $launcher -ArgumentList @('-osint', '-url', '"https://example.com/"')
@@ -138,6 +162,18 @@ if (Test-Path $ff) {
     Start-Sleep -Seconds $pg[2]
     Shot $pg[0]
   }
+
+  # обновление поверх работающего BySS: закрыть, обновить, открыть снова
+  $before = (Get-Content -LiteralPath $log -ErrorAction SilentlyContinue).Count
+  $t1 = Get-Date
+  $u = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+  Note ('update exit code: ' + $u.ExitCode + ', took ' + [int]((Get-Date) - $t1).TotalSeconds + ' s')
+  Get-Content -LiteralPath $log -ErrorAction SilentlyContinue | Select-Object -Skip $before | ForEach-Object { Note $_ }
+  Start-Sleep -Seconds 25
+  $again = @(Get-Process firefox -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }).Count
+  Note ('BySS reopened after update: ' + ($again -gt 0))
+  Shot '8-after-update'
+  Save-WindowIcon 'window-icon-2'
   Get-Process firefox -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 if ($bad -gt 0) { exit 1 }

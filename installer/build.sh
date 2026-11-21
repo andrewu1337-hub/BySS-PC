@@ -39,7 +39,7 @@ fi
 N=/tmp/byss-nsis && rm -rf "$N" && mkdir -p "$N"
 cp installer/byss.nsi installer/setup.ps1 firefox/policies.template.json firefox/profile/user.js \
    firefox/profile/chrome/userChrome.css firefox/profile/chrome/userContent.css out/byss.xpi "$N/"
-cp installer/launcher.nsi "$N/"
+cp installer/launcher.nsi firefox/byss.cfg firefox/autoconfig.js "$N/"
 cp assets/byss-shield.ico "$N/byss.ico"
 # BySS.exe — запуск BySS (ярлыки, браузер по умолчанию); кладётся в установщик
 (cd "$N" && makensis -V2 -DVERSION="$V" launcher.nsi)

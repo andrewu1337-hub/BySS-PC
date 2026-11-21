@@ -44,3 +44,6 @@ user_pref("browser.taskbar.lists.recent.enabled", false);
 user_pref("browser.taskbar.lists.tasks.enabled", false);
 user_pref("browser.privateWindowSeparation.enabled", false);
 user_pref("browser.privacySegmentation.createdShortcut", true);
+
+// обновление BySS закрывает окна само — без вопроса «закрыть все вкладки?»
+user_pref("browser.tabs.warnOnClose", false);

@@ -1,4 +1,19 @@
 'use strict';
+const preconnected = new Set();
+/** Заранее открыть соединение с сайтом плитки — страница откроется быстрее. */
+function preconnect(url) {
+  try {
+    const o = new URL(url).origin;
+    if (!/^https?:/.test(o) || preconnected.has(o)) return;
+    preconnected.add(o);
+    const l = document.createElement('link');
+    l.rel = 'preconnect';
+    l.href = o;
+    document.head.appendChild(l);
+  } catch (e) {
+    // не адрес
+  }
+}
 const B = window.byss;
 const I = window.ICONS;
 let S = null;
@@ -102,7 +117,16 @@ function cell(sc, i) {
   name.className = 'name';
   name.textContent = sc.title || host;
   c.append(tile, name);
-  c.onclick = (e) => B.invoke('open', sc.url, e.ctrlKey || e.metaKey);
+  // открыть сразу, без лишних ожиданий; при наведении — заранее соединиться с сайтом
+  c.onpointerenter = () => preconnect(sc.url);
+  c.onclick = (e) => {
+    if (!(e.ctrlKey || e.metaKey) && /^https?:\/\//i.test(sc.url)) {
+      c.classList.add('going');
+      location.href = sc.url;
+      return;
+    }
+    B.invoke('open', sc.url, e.ctrlKey || e.metaKey);
+  };
   c.onauxclick = (e) => { if (e.button === 1) B.invoke('open', sc.url, true); };
   c.oncontextmenu = async (e) => {
     e.preventDefault();

@@ -18,7 +18,7 @@ SetCompressor /SOLID lzma
 !define PS '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\payload\setup.ps1"'
 
 Name "BySS"
-Caption "Установка BySS ${VERSION}"
+Caption "BySS ${VERSION}"
 OutFile "BySS-Setup.exe"
 InstallDir "$LOCALAPPDATA\BySS"
 RequestExecutionLevel user
@@ -39,6 +39,7 @@ Var ProfileDir
 !insertmacro MUI_PAGE_WELCOME
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfUpdating
 !insertmacro MUI_PAGE_DIRECTORY
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW InstShow
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_TITLE "BySS установлен"
 !define MUI_FINISHPAGE_TEXT "Ярлык BySS — на рабочем столе и в меню «Пуск».$\r$\n$\r$\nПри первом запуске BySS сам поставит uBlock Origin — это займёт несколько секунд."
@@ -73,6 +74,23 @@ Function .onInit
     SetSilent normal
   ${EndIf}
   StrCpy $ProfileDir "$APPDATA\BySS\firefox-profile"
+  ; BySS уже стоит — это обновление: без страниц мастера, одно окошко с ходом, потом BySS откроется сам
+  ReadRegStr $2 HKCU "${UNKEY}" "InstallLocation"
+  ${If} $2 != ""
+  ${AndIf} ${FileExists} "$2\firefox\firefox.exe"
+    StrCpy $INSTDIR $2
+    StrCpy $Updating 1
+    ReadRegStr $3 HKCU "${UNKEY}" "ProfileDir"
+    ${If} $3 != ""
+      StrCpy $ProfileDir $3
+    ${EndIf}
+  ${EndIf}
+FunctionEnd
+
+Function InstShow
+  ${If} $Updating == 1
+    !insertmacro MUI_HEADER_TEXT "Обновление BySS ${VERSION}" "Закладки, вкладки и настройки остаются. BySS откроется сам."
+  ${EndIf}
 FunctionEnd
 
 Function SkipIfUpdating
@@ -96,6 +114,8 @@ Section "BySS" SecMain
   File "byss.ico"
   File "byss.xpi"
   File "BySS.exe"
+  File "byss.cfg"
+  File "autoconfig.js"
 
   InitPluginsDir
   SetOutPath "$PLUGINSDIR\payload"
@@ -106,7 +126,14 @@ Section "BySS" SecMain
   File "userContent.css"
   SetOutPath "$INSTDIR"
 
-  DetailPrint "Скачиваю Firefox ESR у Mozilla (около 70 МБ) — пара минут…"
+  ${If} $Updating == 1
+    DetailPrint "Закрываю BySS — он откроется снова через несколько секунд…"
+    nsExec::Exec '${PS} -Step close -InstallDir "$INSTDIR"'
+    Pop $0
+    DetailPrint "Обновляю BySS…"
+  ${Else}
+    DetailPrint "Скачиваю Firefox ESR у Mozilla (около 70 МБ) — пара минут…"
+  ${EndIf}
   nsExec::Exec '${PS} -Step firefox -InstallDir "$INSTDIR"'
   Pop $0
   ${If} $0 != 0
@@ -114,7 +141,9 @@ Section "BySS" SecMain
     Call Fail
   ${EndIf}
 
-  DetailPrint "Настраиваю BySS и переношу главную…"
+  ${If} $Updating != 1
+    DetailPrint "Настраиваю BySS и переношу главную…"
+  ${EndIf}
   nsExec::Exec '${PS} -Step configure -InstallDir "$INSTDIR" -ProfileDir "$ProfileDir" -Version "${VERSION}" -SetupRev ${SETUP_REV} -Payload "$PLUGINSDIR\payload"'
   Pop $0
   ${If} $0 != 0
@@ -122,16 +151,19 @@ Section "BySS" SecMain
     Call Fail
   ${EndIf}
 
-  DetailPrint "Убираю старую версию BySS (если она есть)…"
-  nsExec::Exec '${PS} -Step oldapp -InstallDir "$INSTDIR"'
-  Pop $0
-
-  DetailPrint "Создаю ярлыки…"
+  ${If} $Updating != 1
+    DetailPrint "Убираю старую версию BySS (если она есть)…"
+    nsExec::Exec '${PS} -Step oldapp -InstallDir "$INSTDIR"'
+    Pop $0
+    DetailPrint "Создаю ярлыки…"
+  ${EndIf}
   ; ярлыки запускают BySS.exe: он открывает Firefox с профилем BySS
   CreateShortCut "$DESKTOP\BySS.lnk" "$INSTDIR\BySS.exe" "" "$INSTDIR\byss.ico" 0 SW_SHOWNORMAL "" "BySS"
   CreateShortCut "$SMPROGRAMS\BySS.lnk" "$INSTDIR\BySS.exe" "" "$INSTDIR\byss.ico" 0 SW_SHOWNORMAL "" "BySS"
   ; свой значок и имя BySS на панели задач и в списке браузеров Windows (а не Firefox)
-  DetailPrint "Добавляю BySS в список браузеров Windows…"
+  ${If} $Updating != 1
+    DetailPrint "Добавляю BySS в список браузеров Windows…"
+  ${EndIf}
   nsExec::Exec '${PS} -Step shortcuts -InstallDir "$INSTDIR" -Links "$DESKTOP\BySS.lnk|$SMPROGRAMS\BySS.lnk"'
   Pop $0
 
@@ -174,6 +206,8 @@ Section "Uninstall"
   Delete "$INSTDIR\byss.xpi"
   Delete "$INSTDIR\byss.ico"
   Delete "$INSTDIR\BySS.exe"
+  Delete "$INSTDIR\byss.cfg"
+  Delete "$INSTDIR\autoconfig.js"
   Delete "$INSTDIR\byss-install.json"
   Delete "$INSTDIR\Uninstall BySS.exe"
   RMDir "$INSTDIR"

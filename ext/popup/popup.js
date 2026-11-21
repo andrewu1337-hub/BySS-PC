@@ -282,13 +282,6 @@ function render() {
     }
   }));
   panel.appendChild(el('div', 'sep'));
-  panel.appendChild(item({
-    icon: 'trash',
-    label: 'Удалить все данные',
-    color: 'danger',
-    onClick: () => { clearState = clearState ? '' : 'ask'; render(); }
-  }));
-  if (clearState) panel.appendChild(clearBox());
   panel.appendChild(item({ icon: 'reload', label: 'Проверить обновления', color: 'accent', onClick: checkUpdate }));
   if (updMsg) panel.appendChild(updateBox());
   panel.appendChild(item({
@@ -301,6 +294,14 @@ function render() {
       window.close();
     }
   }));
+  // как было: последним пунктом
+  panel.appendChild(item({
+    icon: 'trash',
+    label: 'Удалить все данные',
+    color: 'danger',
+    onClick: () => { clearState = clearState ? '' : 'ask'; render(); }
+  }));
+  if (clearState) panel.appendChild(clearBox());
 }
 
 (async () => {

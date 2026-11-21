@@ -112,3 +112,5 @@ body.light .cell .name { text-shadow: none; }
 .fxpi:hover { background: var(--card2); }
 .fxpi b { width: 44px; flex: none; }
 .fxpi span { color: var(--text2); }
+/* плитку нажали — страница уже открывается */
+.cell.going .tile { transform: scale(.9); opacity: .6; transition: transform .12s, opacity .12s; }

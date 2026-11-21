@@ -104,7 +104,10 @@
     },
     "3rdparty": {
       "Extensions": {
-        "byss@byss.app": "__THIRDPARTY__"
+        "byss@byss.app": "__THIRDPARTY__",
+        "uBlock0@raymondhill.net": {
+          "advancedSettings": [["suspendUntilListsAreLoaded", "false"]]
+        }
       }
     }
   }
