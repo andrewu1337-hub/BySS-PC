@@ -23,67 +23,99 @@ jobs:
         id: c
         run: |
           changed=0
-          if [ -f bundle.b64 ]; then base64 -d bundle.b64 | tar -xJ; rm -f bundle.b64; changed=1; fi
           if [ -f update.b64 ]; then
             base64 -d update.b64 | xz -dc > /tmp/u.patch
             git apply --whitespace=nowarn /tmp/u.patch
             rm -f update.b64
             changed=1
           fi
+          if [ -f update-remove.txt ]; then
+            while read -r f; do [ -n "$f" ] && rm -rf -- "$f"; done < update-remove.txt
+            rm -f update-remove.txt
+            changed=1
+          fi
           if [ "$changed" = 1 ]; then
             git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git config user.email ""
             git add -A
             git commit -m "Обновление исходников" || true
             git push
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          if [ -f package.json ]; then echo "app=true" >> "$GITHUB_OUTPUT"; else echo "app=false" >> "$GITHUB_OUTPUT"; fi
+          if [ -f ext/manifest.json ]; then echo "app=true" >> "$GITHUB_OUTPUT"; else echo "app=false" >> "$GITHUB_OUTPUT"; fi
 
   build:
     needs: prepare
     if: needs.prepare.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - name: Собрать расширение и установщик
+        run: |
+          set -o pipefail
+          bash installer/build.sh "2.0.${{ github.run_number }}" "${{ github.repository }}" 2>&1 | tee build.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: out
+          path: out/
+      - name: Журнал ошибок (если сборка упала)
+        if: failure()
+        run: |
+          cp build.log /tmp/build-log.txt 2>/dev/null || echo "нет журнала" > /tmp/build-log.txt
+          git config user.name "github-actions[bot]"
+          git config user.email ""
+          git checkout --orphan logs
+          git rm -rf --cached . > /dev/null 2>&1 || true
+          cp /tmp/build-log.txt build-log.txt
+          git add build-log.txt
+          git commit -m "Журнал сборки ${{ github.run_number }}"
+          git push -f origin logs
+
+  test:
+    needs: [prepare, build]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/download-artifact@v4
         with:
-          node-version: 22
-      - name: Шрифт для надписи (свободный, OFL)
+          name: out
+          path: out
+      - name: Поставить BySS на чистую Windows и снять экран
+        shell: pwsh
+        run: ./installer/ci-test.ps1
+      - name: Снимки — в ветку test-shots
+        if: always()
         shell: bash
         run: |
-          mkdir -p pages/shared/fonts
-          curl -fsSL --retry 3 -o pages/shared/fonts/archivo_black.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/archivoblack/ArchivoBlack-Regular.ttf" || echo "шрифт не скачался — будет запасной"
-      - name: Номер версии
-        shell: bash
-        run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version --allow-same-version
-      - name: Зависимости
-        shell: bash
-        run: npm install --no-audit --no-fund 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
-      - name: Сборка и публикация
-        shell: bash
+          mkdir -p /tmp/shots && cp -r shots/. /tmp/shots/ 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email ""
+          git checkout --orphan test-shots
+          git rm -rf --cached . > /dev/null 2>&1 || true
+          git clean -fdx > /dev/null 2>&1 || true
+          cp -r /tmp/shots/. .
+          git add -A
+          git commit -m "Проверка ${{ github.run_number }}" || true
+          git push -f origin test-shots
+
+  release:
+    needs: [prepare, build, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: out
+          path: out
+      - name: Опубликовать
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npx electron-builder --win --x64 --publish never 2>&1 | tee -a build.log; test ${PIPESTATUS[0]} -eq 0 || exit 1
-          ls dist | tee -a build.log
-          files="dist/BySS-Setup.exe"
-          [ -f dist/BySS-Setup.exe.blockmap ] && files="$files dist/BySS-Setup.exe.blockmap"
-          [ -f dist/latest.yml ] && files="$files dist/latest.yml"
-          gh release create "v1.0.${{ github.run_number }}" $files --repo "${{ github.repository }}" --target "${{ needs.prepare.outputs.sha }}" --title "BySS 1.0.${{ github.run_number }}" --notes "BySS для Windows. Установщик: BySS-Setup.exe" --latest 2>&1 | tee -a build.log; exit ${PIPESTATUS[0]}
-      - name: Журнал ошибок (если сборка упала)
-        if: failure()
-        shell: bash
-        run: |
-          cp build.log "$RUNNER_TEMP/build-log.txt" 2>/dev/null || echo "нет журнала" > "$RUNNER_TEMP/build-log.txt"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout --orphan logs
-          git rm -rf --cached . > /dev/null 2>&1 || true
-          git clean -fdx -e node_modules > /dev/null 2>&1 || true
-          cp "$RUNNER_TEMP/build-log.txt" build-log.txt
-          git add build-log.txt
-          git commit -m "Журнал сборки"
-          git push -f origin logs
+          V="2.0.${{ github.run_number }}"
+          gh release create "v$V" out/BySS-Setup.exe out/latest.yml out/byss.xpi out/updates.json out/byss.json \
+            --repo "${{ github.repository }}" --target "${{ needs.prepare.outputs.sha }}" --latest \
+            --title "BySS $V" \
+            --notes "BySS для Windows на Firefox ESR. Установка: скачайте BySS-Setup.exe и запустите. Из старого BySS: меню ⋮ → «Обновить браузер»."
