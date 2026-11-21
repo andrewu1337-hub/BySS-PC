@@ -65,6 +65,13 @@ try {
   Note ('policies.json broken: ' + $_.Exception.Message)
   $bad++
 }
+try {
+  $tb = (Get-ItemProperty -LiteralPath 'HKCU:\Software\Mozilla\Firefox\TaskBarIDs' -ErrorAction Stop).PSObject.Properties |
+    Where-Object { $_.Name -like '*firefox' } | ForEach-Object { $_.Name + ' = ' + $_.Value }
+  Note ('taskbar id: ' + ($tb -join '; '))
+} catch {
+  Note 'taskbar id: none'
+}
 if ($bad -gt 0) { Note ('FAILED checks: ' + $bad) }
 
 if (Test-Path $ff) {

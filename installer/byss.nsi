@@ -128,6 +128,9 @@ Section "BySS" SecMain
   DetailPrint "Создаю ярлыки…"
   CreateShortCut "$DESKTOP\BySS.lnk" "$INSTDIR\firefox\firefox.exe" '-profile "$ProfileDir"' "$INSTDIR\byss.ico" 0 SW_SHOWNORMAL "" "BySS"
   CreateShortCut "$SMPROGRAMS\BySS.lnk" "$INSTDIR\firefox\firefox.exe" '-profile "$ProfileDir"' "$INSTDIR\byss.ico" 0 SW_SHOWNORMAL "" "BySS"
+  ; свой значок и имя BySS на панели задач (а не Firefox)
+  nsExec::Exec '${PS} -Step shortcuts -InstallDir "$INSTDIR" -Links "$DESKTOP\BySS.lnk|$SMPROGRAMS\BySS.lnk"'
+  Pop $0
 
   WriteUninstaller "$INSTDIR\Uninstall BySS.exe"
   WriteRegStr HKCU "${UNKEY}" "DisplayName" "BySS"
@@ -171,6 +174,7 @@ Section "Uninstall"
   Delete "$INSTDIR\Uninstall BySS.exe"
   RMDir "$INSTDIR"
   DeleteRegKey HKCU "${UNKEY}"
+  DeleteRegValue HKCU "Software\Mozilla\Firefox\TaskBarIDs" "$INSTDIR\firefox"
   IfSilent done
   MessageBox MB_YESNO|MB_ICONQUESTION "Удалить и данные BySS — входы на сайтах, пароли и настройки?" IDNO done
   RMDir /r "$ProfileDir"

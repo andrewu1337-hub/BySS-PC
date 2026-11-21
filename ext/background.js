@@ -318,6 +318,25 @@ browser.storage.onChanged.addListener((ch, area) => {
   if (JSON.stringify(s.autoscroll) !== JSON.stringify(old.autoscroll)) reapplyAutoscroll();
 });
 
+// ---------------------------------------------------------------- постоянный адрес страниц BySS
+
+/* Домашняя страница в политиках Firefox записана постоянным адресом BySS. Если Firefox выдал
+   расширению другой адрес, вкладки с постоянным адресом переводим на настоящий — иначе там пусто. */
+const FIXED_BASE = 'moz-extension://a90f5681-e157-4e8e-8725-17a034929c49/';
+const OWN_BASE = browser.runtime.getURL('');
+
+function fixAddress(tabId, url) {
+  if (FIXED_BASE === OWN_BASE || typeof url !== 'string' || !url.startsWith(FIXED_BASE)) return;
+  browser.tabs.update(tabId, { url: OWN_BASE + url.slice(FIXED_BASE.length) }).catch(() => {});
+}
+
+browser.tabs.onUpdated.addListener((tabId, info, tab) => {
+  fixAddress(tabId, info.url || (tab && tab.url));
+});
+browser.tabs.query({}).then((tabs) => {
+  for (const t of tabs) fixAddress(t.id, t.url);
+}).catch(() => {});
+
 // ---------------------------------------------------------------- запуск
 
 (async () => {

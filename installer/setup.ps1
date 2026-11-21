@@ -1,7 +1,8 @@
 ﻿# BySS: шаги установщика, которые проще сделать в PowerShell.
 #   firefox   — скачать Firefox ESR у Mozilla, проверить подпись Mozilla и распаковать в папку BySS;
 #   configure — политики Firefox (без истории, uBlock Origin, BySS), профиль, значок окна, перенос настроек старого BySS;
-#   oldapp    — убрать старый BySS (Electron), если он установлен; его настройки уже перенесены.
+#   oldapp    — убрать старый BySS (Electron), если он установлен; его настройки уже перенесены;
+#   shortcuts — значок и имя BySS на панели задач (а не Firefox).
 # Пишет журнал в %TEMP%\byss-setup.log. Код выхода 0 — успех.
 param(
   [Parameter(Mandatory = $true)][string]$Step,
@@ -9,7 +10,8 @@ param(
   [string]$ProfileDir = '',
   [string]$Version = '2.0.0',
   [int]$SetupRev = 1,
-  [string]$Payload = ''
+  [string]$Payload = '',
+  [string]$Links = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -231,6 +233,88 @@ function Step-OldApp {
   }
 }
 
+# ---------------------------------------------------------------- значок BySS на панели задач
+
+# Windows показывает на панели задач значок и имя приложения по его «паспорту» (AppUserModelID).
+# Firefox берёт свой паспорт из реестра (TaskBarIDs) по папке с firefox.exe — даём ему паспорт BySS
+# и ставим тот же паспорт ярлыкам BySS. Тогда на панели задач — значок и имя BySS.
+$AppId = 'BySS.Browser'
+
+$AumidCode = @'
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+namespace BySSSetup {
+  [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+  class ShellLinkObject { }
+
+  [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+  interface IPropertyStore {
+    void GetCount(out uint count);
+    void GetAt(uint index, out PropKey key);
+    void GetValue(ref PropKey key, [Out] PropVar value);
+    void SetValue(ref PropKey key, [In] PropVar value);
+    void Commit();
+  }
+
+  [StructLayout(LayoutKind.Sequential, Pack = 4)]
+  struct PropKey { public Guid fmtid; public uint pid; }
+
+  [StructLayout(LayoutKind.Explicit, Size = 24)]
+  class PropVar { [FieldOffset(0)] public ushort vt; [FieldOffset(8)] public IntPtr ptr; }
+
+  public static class Aumid {
+    public static void Set(string lnk, string id) {
+      object link = new ShellLinkObject();
+      try {
+        ((IPersistFile)link).Load(lnk, 2);
+        PropKey key = new PropKey();
+        key.fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+        key.pid = 5;
+        PropVar v = new PropVar();
+        v.vt = 31;
+        v.ptr = Marshal.StringToCoTaskMemUni(id);
+        try {
+          IPropertyStore st = (IPropertyStore)link;
+          st.SetValue(ref key, v);
+          st.Commit();
+        } finally {
+          Marshal.FreeCoTaskMem(v.ptr);
+        }
+        ((IPersistFile)link).Save(lnk, true);
+      } finally {
+        Marshal.ReleaseComObject(link);
+      }
+    }
+  }
+}
+'@
+
+function Step-Shortcuts {
+  $ffDir = (Join-Path $InstallDir 'firefox').TrimEnd('\')
+  $key = 'HKCU:\Software\Mozilla\Firefox\TaskBarIDs'
+  if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+  foreach ($p in (@($ffDir, (ShortPath $ffDir)) | Select-Object -Unique)) {
+    New-ItemProperty -Path $key -Name $p -Value $AppId -PropertyType String -Force | Out-Null
+  }
+  Log ('taskbar id for ' + $ffDir)
+  try {
+    Add-Type -TypeDefinition $AumidCode -Language CSharp
+  } catch {
+    Log ('app id code failed: ' + $_.Exception.Message)
+    return
+  }
+  foreach ($l in ($Links -split '\|')) {
+    if (-not $l -or -not (Test-Path -LiteralPath $l)) { continue }
+    try {
+      [BySSSetup.Aumid]::Set($l, $AppId)
+      Log ('app id set: ' + $l)
+    } catch {
+      Log ('app id failed for ' + $l + ': ' + $_.Exception.Message)
+    }
+  }
+}
+
 # ---------------------------------------------------------------- запуск шага
 
 try {
@@ -239,6 +323,7 @@ try {
     'firefox' { Step-Firefox }
     'configure' { Step-Configure }
     'oldapp' { Step-OldApp }
+    'shortcuts' { Step-Shortcuts }
     default { throw ('unknown step ' + $Step) }
   }
   exit 0
