@@ -1,0 +1,58 @@
+installer exit code: 0, took 18 s
+[2026-11-21T20:16:59] step firefox dir=C:\Users\runneradmin\AppData\Local\BySS version=2.0.0
+[2026-11-21T20:16:59] download try 1
+[2026-11-21T20:17:00] downloaded 90796712 bytes
+[2026-11-21T20:17:01] signature: Valid / CN=Mozilla Corporation, OU=Firefox Engineering Operations, O=Mozilla Corporation, L=San Francisco, S=California, C=US
+[2026-11-21T20:17:08] Firefox ready
+[2026-11-21T20:17:08] step configure dir=C:\Users\runneradmin\AppData\Local\BySS version=2.0.29
+[2026-11-21T20:17:09] old BySS settings found
+[2026-11-21T20:17:09] policies written
+[2026-11-21T20:17:09] profile ready
+[2026-11-21T20:17:10] step oldapp dir=C:\Users\runneradmin\AppData\Local\BySS version=2.0.0
+[2026-11-21T20:17:10] no old BySS
+[2026-11-21T20:17:10] step shortcuts dir=C:\Users\runneradmin\AppData\Local\BySS version=2.0.0
+[2026-11-21T20:17:10] taskbar id for C:\Users\runneradmin\AppData\Local\BySS\firefox
+[2026-11-21T20:17:11] app id set: C:\Users\runneradmin\Desktop\BySS.lnk
+[2026-11-21T20:17:11] app id set: C:\Users\runneradmin\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\BySS.lnk
+[2026-11-21T20:17:11] browser registered as BySS
+
+firefox.exe: True
+policies.json: True
+byss.xpi: True
+main-window.ico: True
+user.js: True
+byss.cfg: True
+autoconfig.js: True
+userChrome.css: True
+desktop shortcut: True
+BySS.exe: True
+browser registered: True
+uninstaller: True
+policies ok; default engine: Яндекс; start: previous-session
+import: {"name":"BySS","theme":"dark","wallpaper":"waves","engine":"yandex","restoreTabs":true,"engines":["google","yandex","currency"],"currency":{"base":"EUR","list":["MDL","USD","RON"],"amount":100},"cities":[{"name":"Rotterdam","lat":51.9225,"lon":4.47917}],"shortcuts":[{"title":"YouTube","url":"https://www.youtube.com/"},{"title":"Wikipedia","url":"https://www.wikipedia.org/"},{"title":"GitHub","url":"https://github.com/"}],"downloads":[],"window":{"width":1200,"height":800}}
+taskbar id: C:\Users\runneradmin\AppData\Local\BySS\firefox = BySS.Browser; C:\Users\RUNNER~1\AppData\Local\BySS\firefox = BySS.Browser
+url handler: "C:\Users\runneradmin\AppData\Local\BySS\BySS.exe" -osint -url "%1"
+browser name: BySS
+taskbar items: Running applications | Start | Search | Search | Task View | File Explorer pinned | Microsoft Edge pinned | Terminal - 1 running window | BySS - 1 running window | Show Hidden Icons | Azure Arc | Network Network
+Internet access
+
+Ethernet 4
+No internet access | Volume No audio device is installed | Clock 8:18 PM
+‎11/‎21/‎2026 | Notifications No new notifications (Do not disturb on) | Show Desktop
+window-icon: from window
+update exit code: 0, took 5 s
+[2026-11-21T20:18:57] step close dir=C:\Users\runneradmin\AppData\Local\BySS version=2.0.0
+[2026-11-21T20:19:00] BySS closed
+[2026-11-21T20:19:00] step firefox dir=C:\Users\runneradmin\AppData\Local\BySS version=2.0.0
+[2026-11-21T20:19:00] Firefox already installed, it updates itself
+[2026-11-21T20:19:01] step configure dir=C:\Users\runneradmin\AppData\Local\BySS version=2.0.29
+[2026-11-21T20:19:01] old BySS settings found
+[2026-11-21T20:19:01] policies written
+[2026-11-21T20:19:01] profile ready
+[2026-11-21T20:19:01] step shortcuts dir=C:\Users\runneradmin\AppData\Local\BySS version=2.0.0
+[2026-11-21T20:19:01] taskbar id for C:\Users\runneradmin\AppData\Local\BySS\firefox
+[2026-11-21T20:19:01] app id set: C:\Users\runneradmin\Desktop\BySS.lnk
+[2026-11-21T20:19:01] app id set: C:\Users\runneradmin\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\BySS.lnk
+[2026-11-21T20:19:01] browser registered as BySS
+BySS reopened after update: True, new process: True
+window-icon-2: from window
