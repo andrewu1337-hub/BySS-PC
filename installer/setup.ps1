@@ -16,6 +16,13 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $LogFile = Join-Path $env:TEMP 'byss-setup.log'
 
+# Если установщик запустили из PowerShell 7, Windows PowerShell наследует чужой путь модулей
+# и не может загрузить свои (например, проверку подписи). Возвращаем обычный путь модулей.
+try {
+  $machineModules = [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine')
+  $env:PSModulePath = (@((Join-Path $PSHOME 'Modules'), $machineModules) | Where-Object { $_ }) -join ';'
+} catch { }
+
 function Log([string]$m) {
   try { Add-Content -LiteralPath $LogFile -Value ('[' + (Get-Date -Format 's') + '] ' + $m) -Encoding UTF8 } catch { }
 }
@@ -61,6 +68,7 @@ function Step-Firefox {
   Log ('downloaded ' + (Get-Item -LiteralPath $exe).Length + ' bytes')
 
   # только настоящий Firefox: файл подписан Mozilla
+  try { Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop } catch { }
   $sig = Get-AuthenticodeSignature -FilePath $exe
   $subject = ''
   if ($sig.SignerCertificate) { $subject = $sig.SignerCertificate.Subject }

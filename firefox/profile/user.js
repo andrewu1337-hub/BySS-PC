@@ -2,8 +2,6 @@
 
 // своё расширение BySS (без подписи Mozilla — можно только в Firefox ESR)
 user_pref("xpinstall.signatures.required", false);
-// постоянный адрес страниц BySS — на него указывает домашняя страница
-user_pref("extensions.webextensions.uuids", "{\"byss@byss.app\":\"a90f5681-e157-4e8e-8725-17a034929c49\"}");
 // оформление окна в стиле BySS (chrome/userChrome.css)
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
 

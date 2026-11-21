@@ -76,6 +76,7 @@
     },
     "Preferences": {
       "xpinstall.signatures.required": { "Value": false, "Status": "locked" },
+      "extensions.webextensions.uuids": { "Value": "{\"byss@byss.app\":\"a90f5681-e157-4e8e-8725-17a034929c49\"}", "Status": "default" },
       "toolkit.legacyUserProfileCustomizations.stylesheets": { "Value": true, "Status": "locked" },
       "places.history.enabled": { "Value": false, "Status": "locked" },
       "browser.formfill.enable": { "Value": false, "Status": "locked" },

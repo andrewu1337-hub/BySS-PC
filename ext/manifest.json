@@ -12,40 +12,84 @@
       "update_url": "https://github.com/andrewu1337-hub/BySS-PC/releases/latest/download/updates.json"
     }
   },
-  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "96": "icons/96.png", "128": "icons/128.png" },
-  "background": { "scripts": ["shared/defaults.js", "background.js"], "persistent": true },
-  "permissions": ["storage", "unlimitedStorage", "tabs", "theme", "browsingData", "downloads", "downloads.open", "<all_urls>"],
-  "chrome_url_overrides": { "newtab": "home/index.html" },
-  "chrome_settings_overrides": { "homepage": "home/index.html" },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "96": "icons/96.png",
+    "128": "icons/128.png"
+  },
+  "background": {
+    "scripts": [
+      "shared/defaults.js",
+      "background.js"
+    ],
+    "persistent": true
+  },
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "theme",
+    "browsingData",
+    "downloads",
+    "downloads.open",
+    "<all_urls>"
+  ],
+  "chrome_url_overrides": {
+    "newtab": "home/index.html"
+  },
   "browser_action": {
-    "default_icon": { "16": "icons/16.png", "32": "icons/32.png" },
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    },
     "default_title": "BySS",
     "default_popup": "popup/index.html",
     "default_area": "navbar"
   },
-  "options_ui": { "page": "settings/index.html", "open_in_tab": true },
+  "options_ui": {
+    "page": "settings/index.html",
+    "open_in_tab": true
+  },
   "commands": {
     "autoscroll": {
-      "suggested_key": { "default": "Alt+Shift+S" },
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
       "description": "Автоскролл: запустить или остановить"
     }
   },
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*", "*://*.youtube-nocookie.com/*"],
-      "js": ["yt/yt.js"],
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.youtube-nocookie.com/*"
+      ],
+      "js": [
+        "yt/yt.js"
+      ],
       "run_at": "document_start",
       "all_frames": true,
       "world": "MAIN"
     },
     {
-      "matches": ["*://*.youtube.com/*"],
-      "js": ["yt/guard.js"],
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "yt/guard.js"
+      ],
       "run_at": "document_start"
     },
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["autoscroll.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "autoscroll.js"
+      ],
       "run_at": "document_idle"
     }
   ]
