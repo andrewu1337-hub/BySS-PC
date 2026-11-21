@@ -337,6 +337,16 @@ browser.tabs.query({}).then((tabs) => {
   for (const t of tabs) fixAddress(t.id, t.url);
 }).catch(() => {});
 
+/* При первом запуске Firefox открывает главную раньше, чем успевает включиться BySS, —
+   такая вкладка остаётся пустой. После установки или обновления BySS перезагружаем её. */
+browser.runtime.onInstalled.addListener(() => {
+  browser.tabs.query({}).then((tabs) => {
+    for (const t of tabs) {
+      if (typeof t.url === 'string' && t.url.startsWith(OWN_BASE + 'home/')) browser.tabs.reload(t.id).catch(() => {});
+    }
+  }).catch(() => {});
+});
+
 // ---------------------------------------------------------------- запуск
 
 (async () => {
