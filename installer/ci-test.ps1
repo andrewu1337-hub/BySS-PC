@@ -164,14 +164,16 @@ if (Test-Path $ff) {
   }
 
   # обновление поверх работающего BySS: закрыть, обновить, открыть снова
+  $pidsBefore = @(Get-Process firefox -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
   $before = (Get-Content -LiteralPath $log -ErrorAction SilentlyContinue).Count
   $t1 = Get-Date
   $u = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
   Note ('update exit code: ' + $u.ExitCode + ', took ' + [int]((Get-Date) - $t1).TotalSeconds + ' s')
   Get-Content -LiteralPath $log -ErrorAction SilentlyContinue | Select-Object -Skip $before | ForEach-Object { Note $_ }
   Start-Sleep -Seconds 25
-  $again = @(Get-Process firefox -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }).Count
-  Note ('BySS reopened after update: ' + ($again -gt 0))
+  $now = @(Get-Process firefox -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
+  $fresh = @($now | Where-Object { $pidsBefore -notcontains $_.Id }).Count
+  Note ('BySS reopened after update: ' + ($now.Count -gt 0) + ', new process: ' + ($fresh -gt 0))
   Shot '8-after-update'
   Save-WindowIcon 'window-icon-2'
   Get-Process firefox -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

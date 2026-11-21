@@ -308,7 +308,13 @@ namespace BySSSetup {
 # Трогаем только Firefox из папки BySS, не чужой.
 function Step-Close {
   $ffDir = (Join-Path $InstallDir 'firefox').TrimEnd('\') + '\'
-  $mine = { @(Get-Process firefox -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($ffDir, [StringComparison]::OrdinalIgnoreCase) }) }
+  # путь процесса берём из WMI: установщик 32-битный, и Get-Process не видит путь 64-битного Firefox
+  $mine = {
+    $ids = @(Get-CimInstance Win32_Process -Filter "Name='firefox.exe'" -ErrorAction SilentlyContinue |
+      Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($ffDir, [StringComparison]::OrdinalIgnoreCase) } |
+      ForEach-Object { [int]$_.ProcessId })
+    if ($ids.Count -eq 0) { @() } else { @(Get-Process -Id $ids -ErrorAction SilentlyContinue) }
+  }
   if ((& $mine).Count -eq 0) { Log 'BySS is not running'; return }
   for ($i = 0; $i -lt 20; $i++) {
     $left = & $mine
